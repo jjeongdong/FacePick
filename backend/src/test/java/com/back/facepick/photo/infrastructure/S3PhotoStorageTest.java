@@ -51,7 +51,8 @@ class S3PhotoStorageTest {
                 config.s3Client(endpoint, REGION, ACCESS_KEY, SECRET_KEY),
                 config.s3Presigner(endpoint, REGION, ACCESS_KEY, SECRET_KEY),
                 "photos",
-                15);
+                15,
+                60);
         storage.createBucketIfMissing();
     }
 
@@ -104,5 +105,47 @@ class S3PhotoStorageTest {
                 .PUT(HttpRequest.BodyPublishers.ofByteArray(body))
                 .build();
         return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
+    @DisplayName("서명 GET URL 로 올린 파일을 그대로 받는다")
+    void downloadsThroughPresignedUrl() throws Exception {
+        // given
+        byte[] content = "썸네일 바이트".getBytes(StandardCharsets.UTF_8);
+        put(storage.createUploadUrl("albums/1/thumbnails/a.jpg", "image/jpeg"), "image/jpeg", content);
+
+        // when
+        HttpResponse<byte[]> response = get(storage.createDownloadUrl("albums/1/thumbnails/a.jpg"));
+
+        // then
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).isEqualTo(content);
+    }
+
+    @Test
+    @DisplayName("파일명을 주면 첨부 다운로드 헤더가 붙는다")
+    void addsAttachmentHeader() throws Exception {
+        // given
+        put(storage.createUploadUrl("albums/1/originals/b", "image/jpeg"), "image/jpeg", new byte[] {1, 2, 3});
+
+        // when
+        HttpResponse<byte[]> response = get(storage.createDownloadUrl("albums/1/originals/b", "facepick-1.jpg"));
+
+        // then
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.headers().firstValue("Content-Disposition"))
+                .contains("attachment; filename=\"facepick-1.jpg\"");
+    }
+
+    @Test
+    @DisplayName("다운로드 URL 만료 시간은 업로드와 따로 설정한다")
+    void exposesDownloadExpiry() {
+        // when & then
+        assertThat(storage.downloadUrlExpiry()).isEqualTo(Duration.ofMinutes(60));
+    }
+
+    private static HttpResponse<byte[]> get(URL url) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(url.toURI()).GET().build();
+        return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofByteArray());
     }
 }

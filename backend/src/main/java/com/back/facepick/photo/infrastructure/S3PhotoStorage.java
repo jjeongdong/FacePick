@@ -9,9 +9,11 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 @Component
@@ -22,16 +24,19 @@ public class S3PhotoStorage implements PhotoStorage {
     private final S3Presigner s3Presigner;
     private final String bucket;
     private final Duration uploadUrlExpiry;
+    private final Duration downloadUrlExpiry;
 
     public S3PhotoStorage(
             S3Client s3Client,
             S3Presigner s3Presigner,
             @Value("${storage.bucket}") String bucket,
-            @Value("${storage.presign-minutes}") long presignMinutes) {
+            @Value("${storage.presign-minutes}") long presignMinutes,
+            @Value("${storage.download-url-minutes}") long downloadUrlMinutes) {
         this.s3Client = s3Client;
         this.s3Presigner = s3Presigner;
         this.bucket = bucket;
         this.uploadUrlExpiry = Duration.ofMinutes(presignMinutes);
+        this.downloadUrlExpiry = Duration.ofMinutes(downloadUrlMinutes);
     }
 
     @Override
@@ -54,6 +59,26 @@ public class S3PhotoStorage implements PhotoStorage {
     }
 
     @Override
+    public URL createDownloadUrl(String key) {
+        return presignGet(GetObjectRequest.builder().bucket(bucket).key(key).build());
+    }
+
+    // 파일명은 서버가 만든 값(facepick-{id}.{ext})이라 따옴표 이스케이프가 필요 없다.
+    @Override
+    public URL createDownloadUrl(String key, String fileName) {
+        return presignGet(GetObjectRequest.builder()
+                .bucket(bucket)
+                .key(key)
+                .responseContentDisposition("attachment; filename=\"" + fileName + "\"")
+                .build());
+    }
+
+    @Override
+    public Duration downloadUrlExpiry() {
+        return downloadUrlExpiry;
+    }
+
+    @Override
     public Optional<Long> findObjectSize(String key) {
         try {
             return Optional.of(
@@ -66,6 +91,14 @@ public class S3PhotoStorage implements PhotoStorage {
             }
             throw e;
         }
+    }
+
+    private URL presignGet(GetObjectRequest getObjectRequest) {
+        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                .signatureDuration(downloadUrlExpiry)
+                .getObjectRequest(getObjectRequest)
+                .build();
+        return s3Presigner.presignGetObject(presignRequest).url();
     }
 
     // infra/docker-compose.yml 약속: 버킷은 백엔드가 시작할 때 없으면 만든다.

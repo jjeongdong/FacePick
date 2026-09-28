@@ -27,6 +27,8 @@ storage:
   region: us-east-1
   bucket: photos
   presign-minutes: 15
+  # 보기·다운로드용 GET URL. 한 번 받은 목록을 오래 스크롤해도 깨지지 않게 업로드 URL 보다 길게 둔다.
+  download-url-minutes: 60
 
 jwt:
   # 운영에서는 환경 변수로 32바이트 이상 값을 넣는다. 비어 있으면 앱이 뜨지 않는다.
