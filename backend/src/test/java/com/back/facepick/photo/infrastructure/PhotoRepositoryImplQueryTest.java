@@ -170,6 +170,45 @@ class PhotoRepositoryImplQueryTest {
         assertThat(reloaded.getThumbnailKey()).isEqualTo("albums/1/thumbnails/x.jpg");
     }
 
+    @Test
+    @DisplayName("앨범·ID 조회 - 이 앨범에 있는 사진만, 상태와 관계없이 돌려준다")
+    void findsByAlbumAndIds() {
+        // given
+        Photo uploaded = uploaded(1L, hash(1), T);
+        Photo pending = Photo.create(1L, 1L, hash(2), 1000L, "image/jpeg");
+        Photo otherAlbum = uploaded(2L, hash(3), T);
+        photoRepository.saveAll(List.of(uploaded, pending, otherAlbum));
+        flushAndClear();
+
+        // when
+        List<Photo> photos = photoRepository.findAllByAlbumIdAndIds(
+                1L, List.of(uploaded.getId(), pending.getId(), otherAlbum.getId(), 999L));
+
+        // then
+        assertThat(photos).extracting(Photo::getId).containsExactlyInAnyOrder(uploaded.getId(), pending.getId());
+    }
+
+    @Test
+    @DisplayName("삭제 후 재저장 - 지운 사진과 같은 해시로 다시 올릴 수 있다")
+    void allowsSameHashAfterDelete() {
+        // given
+        Photo photo = uploaded(1L, hash(1), T);
+        photoRepository.saveAll(List.of(photo));
+        flushAndClear();
+        photoRepository.deleteAll(photoRepository.findAllByAlbumIdAndIds(1L, List.of(photo.getId())));
+        flushAndClear();
+
+        // when
+        Photo again = Photo.create(1L, 2L, hash(1), 1000L, "image/jpeg");
+        photoRepository.saveAll(List.of(again));
+        flushAndClear();
+
+        // then
+        assertThat(photoRepository.findAllByAlbumIdAndContentHashes(1L, List.of(hash(1))))
+                .extracting(Photo::getId)
+                .containsExactly(again.getId());
+    }
+
     private static Photo uploaded(Long albumId, String hash, LocalDateTime uploadedAt) {
         Photo photo = Photo.create(albumId, 1L, hash, 1000L, "image/jpeg");
         photo.complete(1L, 1000L, uploadedAt);

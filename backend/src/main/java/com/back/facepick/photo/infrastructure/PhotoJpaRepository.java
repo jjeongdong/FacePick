@@ -14,6 +14,8 @@ import org.springframework.data.repository.query.Param;
 public interface PhotoJpaRepository extends JpaRepository<Photo, Long> {
     List<Photo> findAllByAlbumIdAndContentHashIn(Long albumId, Collection<String> contentHashes);
 
+    List<Photo> findAllByAlbumIdAndIdIn(Long albumId, Collection<Long> photoIds);
+
     // status 는 파라미터가 아닌 리터럴로 둔다. 부분 인덱스(WHERE status = 'UPLOADED')는 조건이 리터럴이어야 쓸 수 있어서,
     // 파라미터면 DB 가 공용 실행 계획으로 바꾼 뒤 앨범 사진 전체를 읽어 정렬한다.
     @Query(

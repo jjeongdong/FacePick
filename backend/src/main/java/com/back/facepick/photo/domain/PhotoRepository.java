@@ -19,4 +19,9 @@ public interface PhotoRepository {
 
     // 없거나 아직 업로드 전(PENDING)이면 PhotoNotFoundException.
     Photo getUploadedById(Long photoId);
+
+    // 상태와 관계없이 이 앨범의 사진만. 없는 ID·다른 앨범 사진은 결과에서 빠진다.
+    List<Photo> findAllByAlbumIdAndIds(Long albumId, Collection<Long> photoIds);
+
+    void deleteAll(List<Photo> photos);
 }
