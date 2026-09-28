@@ -25,7 +25,8 @@ final class BoundedContexts {
 
     // 타 BC 명령을 이벤트가 아닌 동기 호출로만 처리할 수 있어 경계 규칙에서 뺀 클래스의 FQCN.
     // 추가할 때는 해당 클래스의 호출 자리에 사유를 주석으로 남긴다.
-    static final Set<String> SYNC_COMMAND_ALLOWLIST = Set.of();
+    // AuthCommandService: 가입 시 새 userId 로 곧바로 자격 증명과 토큰을 만들어야 해서 UserCommandService.createUser 를 동기 호출한다.
+    static final Set<String> SYNC_COMMAND_ALLOWLIST = Set.of("com.back.facepick.auth.application.AuthCommandService");
 
     private BoundedContexts() {}
 

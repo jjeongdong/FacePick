@@ -17,6 +17,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.RequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -113,6 +114,12 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    @DisplayName("권한 거부는 403 FORBIDDEN 으로 응답한다")
+    void accessDeniedIsForbidden() throws Exception {
+        assertError(get("/test/denied"), 403, "FORBIDDEN", "접근 권한이 없습니다.");
+    }
+
+    @Test
     @DisplayName("처리되지 않은 예외는 500 INTERNAL_SERVER_ERROR 로 응답한다")
     void unexpectedExceptionIsInternalServerError() throws Exception {
         assertError(get("/test/unexpected"), 500, "INTERNAL_SERVER_ERROR", "서버 오류입니다.");
@@ -203,6 +210,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/test/too-large")
         void tooLarge() {
             throw new MaxUploadSizeExceededException(1024);
+        }
+
+        @GetMapping("/test/denied")
+        void denied() {
+            throw new AccessDeniedException("관리자 전용");
         }
 
         @GetMapping("/test/unexpected")
