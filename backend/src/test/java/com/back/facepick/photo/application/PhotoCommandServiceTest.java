@@ -15,13 +15,18 @@ import com.back.facepick.album.application.AlbumQueryApi;
 import com.back.facepick.album.application.dto.api.AlbumInfo;
 import com.back.facepick.photo.application.dto.command.PhotoUploadCommand;
 import com.back.facepick.photo.application.dto.command.PhotoUploadCommand.UploadFile;
+import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.FileResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.Status;
 import com.back.facepick.photo.domain.Photo;
+import com.back.facepick.photo.domain.PhotoOutbox;
+import com.back.facepick.photo.domain.PhotoOutboxRepository;
 import com.back.facepick.photo.domain.PhotoRepository;
+import com.back.facepick.photo.domain.PhotoStatus;
 import com.back.facepick.photo.domain.PhotoStorage;
 import com.back.facepick.photo.domain.exception.PhotoAlbumExpiredException;
+import com.back.facepick.photo.domain.exception.PhotoFileMissingException;
 import com.back.facepick.photo.domain.exception.PhotoNotAlbumMemberException;
 import com.back.facepick.photo.domain.exception.PhotoUnsupportedTypeException;
 import com.back.facepick.photo.fixture.PhotoFixture;
@@ -29,14 +34,19 @@ import java.net.URI;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 @ExtendWith(MockitoExtension.class)
 class PhotoCommandServiceTest {
@@ -53,6 +63,12 @@ class PhotoCommandServiceTest {
 
     @Mock
     private AlbumQueryApi albumQueryApi;
+
+    @Mock
+    private PhotoOutboxRepository photoOutboxRepository;
+
+    @Spy
+    private JsonMapper jsonMapper = JsonMapper.builder().build();
 
     @InjectMocks
     private PhotoCommandService photoCommandService;
@@ -183,6 +199,67 @@ class PhotoCommandServiceTest {
                             1L, ALBUM_ID, command(file(HASH_A), new UploadFile(HASH_B, 1000L, "video/quicktime"))))
                     .isInstanceOf(PhotoUnsupportedTypeException.class);
             then(photoRepository).should(never()).saveAll(anyList());
+        }
+    }
+
+    @Nested
+    @DisplayName("업로드 완료")
+    class CompletePhoto {
+
+        @Test
+        @DisplayName("스토리지 크기가 맞으면 UPLOADED 로 바꾸고 photo.uploaded 를 outbox 에 기록한다")
+        void completesAndWritesOutbox() {
+            // given
+            Photo photo = PhotoFixture.pending(12L, ALBUM_ID, 1L);
+            given(photoRepository.getById(12L)).willReturn(photo);
+            given(photoStorage.findObjectSize(photo.getStorageKey())).willReturn(Optional.of(PhotoFixture.BYTE_SIZE));
+
+            // when
+            PhotoCompleteResult result = photoCommandService.completePhoto(1L, 12L);
+
+            // then
+            assertThat(result).isEqualTo(new PhotoCompleteResult(12L, PhotoStatus.UPLOADED));
+            ArgumentCaptor<PhotoOutbox> captor = ArgumentCaptor.forClass(PhotoOutbox.class);
+            then(photoOutboxRepository).should().save(captor.capture());
+            PhotoOutbox outbox = captor.getValue();
+            assertThat(outbox.getTopic()).isEqualTo("photo.uploaded");
+            assertThat(outbox.getMessageKey()).isEqualTo("10");
+            JsonNode payload = jsonMapper.readTree(outbox.getPayload());
+            assertThat(payload.get("photoId").asLong()).isEqualTo(12L);
+            assertThat(payload.get("albumId").asLong()).isEqualTo(10L);
+            assertThat(payload.get("storageKey").asString()).isEqualTo(photo.getStorageKey());
+            assertThat(payload.get("contentType").asString()).isEqualTo("image/jpeg");
+            assertThat(payload.get("byteSize").asLong()).isEqualTo(PhotoFixture.BYTE_SIZE);
+        }
+
+        @Test
+        @DisplayName("이미 UPLOADED 면 outbox 를 다시 쓰지 않고 같은 결과")
+        void doesNotWriteOutboxTwice() {
+            // given
+            Photo photo = PhotoFixture.uploaded(12L, ALBUM_ID, 1L, HASH_A);
+            given(photoRepository.getById(12L)).willReturn(photo);
+            given(photoStorage.findObjectSize(photo.getStorageKey())).willReturn(Optional.of(PhotoFixture.BYTE_SIZE));
+
+            // when
+            PhotoCompleteResult result = photoCommandService.completePhoto(1L, 12L);
+
+            // then
+            assertThat(result).isEqualTo(new PhotoCompleteResult(12L, PhotoStatus.UPLOADED));
+            then(photoOutboxRepository).should(never()).save(any(PhotoOutbox.class));
+        }
+
+        @Test
+        @DisplayName("스토리지에 파일이 없으면 PhotoFileMissingException 이고 outbox 를 쓰지 않는다")
+        void throwsWhenFileMissing() {
+            // given
+            Photo photo = PhotoFixture.pending(12L, ALBUM_ID, 1L);
+            given(photoRepository.getById(12L)).willReturn(photo);
+            given(photoStorage.findObjectSize(photo.getStorageKey())).willReturn(Optional.empty());
+
+            // when & then
+            assertThatThrownBy(() -> photoCommandService.completePhoto(1L, 12L))
+                    .isInstanceOf(PhotoFileMissingException.class);
+            then(photoOutboxRepository).should(never()).save(any(PhotoOutbox.class));
         }
     }
 

@@ -9,9 +9,12 @@ import com.back.facepick.global.authorization.resolver.AuthUserArgumentResolver;
 import com.back.facepick.global.error.GlobalExceptionHandler;
 import com.back.facepick.photo.application.PhotoCommandService;
 import com.back.facepick.photo.application.dto.command.PhotoUploadCommand;
+import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.FileResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.Status;
+import com.back.facepick.photo.domain.PhotoStatus;
+import com.back.facepick.photo.domain.exception.PhotoFileMissingException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -110,6 +113,32 @@ class PhotoControllerTest {
                                         "{\"files\":[{\"contentHash\":\"ABC\",\"byteSize\":1,\"contentType\":\"image/jpeg\"}]}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("파일 해시 형식이 올바르지 않습니다."));
+    }
+
+    @Test
+    @DisplayName("POST /api/photos/{photoId}/complete 는 200 과 UPLOADED")
+    void completePhoto() throws Exception {
+        // given
+        given(photoCommandService.completePhoto(1L, 12L))
+                .willReturn(new PhotoCompleteResult(12L, PhotoStatus.UPLOADED));
+
+        // when & then
+        mockMvc.perform(post("/api/photos/12/complete"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.photoId").value(12))
+                .andExpect(jsonPath("$.status").value("UPLOADED"));
+    }
+
+    @Test
+    @DisplayName("파일이 아직 없으면 409 PHOTO_FILE_MISSING")
+    void completePhotoRejectsMissingFile() throws Exception {
+        // given
+        given(photoCommandService.completePhoto(1L, 12L)).willThrow(new PhotoFileMissingException());
+
+        // when & then
+        mockMvc.perform(post("/api/photos/12/complete"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PHOTO_FILE_MISSING"));
     }
 
     // 첫 파일은 HASH, 나머지는 서로 다른 64자 16진수 해시.

@@ -2,6 +2,7 @@ package com.back.facepick.photo.presentation;
 
 import com.back.facepick.global.authorization.annotation.AuthUser;
 import com.back.facepick.photo.application.PhotoCommandService;
+import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
 import com.back.facepick.photo.presentation.dto.request.PhotoUploadRequest;
 import lombok.RequiredArgsConstructor;
@@ -25,5 +26,11 @@ public class PhotoController implements PhotoApiDocs {
     public ResponseEntity<PhotoUploadResult> createPhotoUploads(
             @AuthUser Long userId, @PathVariable Long albumId, @RequestBody PhotoUploadRequest request) {
         return ResponseEntity.ok(photoCommandService.createPhotoUploads(userId, albumId, request.toCommand()));
+    }
+
+    @Override
+    @PostMapping("/photos/{photoId}/complete")
+    public ResponseEntity<PhotoCompleteResult> completePhoto(@AuthUser Long userId, @PathVariable Long photoId) {
+        return ResponseEntity.ok(photoCommandService.completePhoto(userId, photoId));
     }
 }
