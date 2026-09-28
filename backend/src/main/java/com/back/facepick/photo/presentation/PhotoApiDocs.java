@@ -2,9 +2,11 @@ package com.back.facepick.photo.presentation;
 
 import com.back.facepick.global.response.CursorPageResult;
 import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
+import com.back.facepick.photo.application.dto.result.PhotoDeleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDetailResult;
 import com.back.facepick.photo.application.dto.result.PhotoSummaryResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
+import com.back.facepick.photo.presentation.dto.request.PhotoDeleteRequest;
 import com.back.facepick.photo.presentation.dto.request.PhotoListRequest;
 import com.back.facepick.photo.presentation.dto.request.PhotoUploadRequest;
 import io.swagger.v3.oas.annotations.Operation;
@@ -46,4 +48,12 @@ public interface PhotoApiDocs {
                     "미리보기(previewUrl)와 원본(originalUrl) 서명 URL 을 줍니다. 원본 URL 로 받으면 facepick-{photoId}.{확장자} 로 저장됩니다."
                             + " 미리보기를 아직 만드는 중이면 previewUrl 은 null 입니다. 앨범 참여자만, 업로드 전 사진은 404.")
     ResponseEntity<PhotoDetailResult> getPhoto(@Parameter(hidden = true) Long userId, Long photoId);
+
+    @Operation(
+            summary = "사진 여러 장 삭제",
+            description = "직접 올린 사진을, 앨범장은 앨범의 모든 사진을 한 번에 100장까지 삭제합니다."
+                    + " 이 앨범에 없는 ID(이미 삭제됨 등)는 건너뛰고 실제로 삭제한 ID 만 돌려줍니다."
+                    + " 권한 없는 사진이 하나라도 있으면 아무것도 삭제하지 않고 403 입니다. 삭제는 되돌릴 수 없습니다.")
+    ResponseEntity<PhotoDeleteResult> deletePhotos(
+            @Parameter(hidden = true) Long userId, Long albumId, @Valid PhotoDeleteRequest request);
 }
