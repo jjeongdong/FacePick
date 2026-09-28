@@ -33,14 +33,13 @@ public class PhotoRepositoryImpl implements PhotoRepository {
 
     @Override
     public List<Photo> findUploadedByAlbumId(Long albumId, int limit) {
-        return photoJpaRepository.findByAlbumIdAndStatusOrderByUploadedAtDescIdDesc(
-                albumId, PhotoStatus.UPLOADED, Limit.of(limit));
+        return photoJpaRepository.findUploadedPage(albumId, Limit.of(limit));
     }
 
     @Override
     public List<Photo> findUploadedByAlbumIdAfter(Long albumId, PhotoCursor cursor, int limit) {
-        return photoJpaRepository.findPageAfter(
-                albumId, PhotoStatus.UPLOADED, cursor.uploadedAt(), cursor.photoId(), Limit.of(limit));
+        return photoJpaRepository.findUploadedPageAfter(
+                albumId, cursor.uploadedAt(), cursor.photoId(), Limit.of(limit));
     }
 
     @Override
