@@ -1,0 +1,227 @@
+package com.back.facepick.photo.application;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.groups.Tuple.tuple;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+
+import com.back.facepick.album.application.AlbumQueryApi;
+import com.back.facepick.album.application.dto.api.AlbumInfo;
+import com.back.facepick.photo.application.dto.command.PhotoUploadCommand;
+import com.back.facepick.photo.application.dto.command.PhotoUploadCommand.UploadFile;
+import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
+import com.back.facepick.photo.application.dto.result.PhotoUploadResult.FileResult;
+import com.back.facepick.photo.application.dto.result.PhotoUploadResult.Status;
+import com.back.facepick.photo.domain.Photo;
+import com.back.facepick.photo.domain.PhotoRepository;
+import com.back.facepick.photo.domain.PhotoStorage;
+import com.back.facepick.photo.domain.exception.PhotoAlbumExpiredException;
+import com.back.facepick.photo.domain.exception.PhotoNotAlbumMemberException;
+import com.back.facepick.photo.domain.exception.PhotoUnsupportedTypeException;
+import com.back.facepick.photo.fixture.PhotoFixture;
+import java.net.URI;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.List;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+
+@ExtendWith(MockitoExtension.class)
+class PhotoCommandServiceTest {
+
+    private static final Long ALBUM_ID = 10L;
+    private static final String HASH_A = "a".repeat(64);
+    private static final String HASH_B = "b".repeat(64);
+
+    @Mock
+    private PhotoRepository photoRepository;
+
+    @Mock
+    private PhotoStorage photoStorage;
+
+    @Mock
+    private AlbumQueryApi albumQueryApi;
+
+    @InjectMocks
+    private PhotoCommandService photoCommandService;
+
+    @Nested
+    @DisplayName("업로드 URL 발급")
+    class CreatePhotoUploads {
+
+        @Test
+        @DisplayName("처음 보는 파일은 PENDING 사진을 만들고 서명 URL 을 준다")
+        void createsPendingPhotoForNewFile() throws Exception {
+            // given
+            givenMemberOfOpenAlbum(1L);
+            given(photoRepository.findAllByAlbumIdAndContentHashes(ALBUM_ID, List.of(HASH_A)))
+                    .willReturn(List.of());
+            givenSaveAllAssignsIds();
+            givenUploadUrls();
+
+            // when
+            PhotoUploadResult result = photoCommandService.createPhotoUploads(1L, ALBUM_ID, command(file(HASH_A)));
+
+            // then
+            assertThat(result.files())
+                    .containsExactly(new FileResult(HASH_A, 100L, Status.UPLOAD_REQUIRED, uploadUrl(HASH_A)));
+            then(photoRepository)
+                    .should()
+                    .saveAll(argThat(photos ->
+                            photos.size() == 1 && photos.get(0).getUploaderId().equals(1L)));
+        }
+
+        @Test
+        @DisplayName("이미 올라간 파일은 URL 없이 ALREADY_UPLOADED")
+        void skipsUploadedFile() {
+            // given
+            givenMemberOfOpenAlbum(1L);
+            given(photoRepository.findAllByAlbumIdAndContentHashes(ALBUM_ID, List.of(HASH_A)))
+                    .willReturn(List.of(PhotoFixture.uploaded(7L, ALBUM_ID, 2L, HASH_A)));
+            given(photoRepository.saveAll(List.of())).willReturn(List.of());
+            given(photoStorage.uploadUrlExpiry()).willReturn(Duration.ofMinutes(15));
+
+            // when
+            PhotoUploadResult result = photoCommandService.createPhotoUploads(1L, ALBUM_ID, command(file(HASH_A)));
+
+            // then
+            assertThat(result.files()).containsExactly(new FileResult(HASH_A, 7L, Status.ALREADY_UPLOADED, null));
+            then(photoStorage).should(never()).createUploadUrl(any(), any());
+        }
+
+        @Test
+        @DisplayName("PENDING 재발급 - 끊긴 파일은 같은 photoId 로 URL 을 다시 주고 업로더를 요청자로 바꾼다")
+        void reissuesUrlForPendingFile() throws Exception {
+            // given
+            Photo pending = PhotoFixture.pending(7L, ALBUM_ID, 2L, HASH_A);
+            givenMemberOfOpenAlbum(1L);
+            given(photoRepository.findAllByAlbumIdAndContentHashes(ALBUM_ID, List.of(HASH_A)))
+                    .willReturn(List.of(pending));
+            given(photoRepository.saveAll(List.of())).willReturn(List.of());
+            givenUploadUrls();
+
+            // when
+            PhotoUploadResult result = photoCommandService.createPhotoUploads(1L, ALBUM_ID, command(file(HASH_A)));
+
+            // then
+            assertThat(result.files())
+                    .containsExactly(new FileResult(HASH_A, 7L, Status.UPLOAD_REQUIRED, uploadUrl(HASH_A)));
+            assertThat(pending.getUploaderId()).isEqualTo(1L);
+        }
+
+        @Test
+        @DisplayName("요청 안 중복 - 같은 해시가 두 번 오면 사진은 하나만 만들고 두 항목에 같은 photoId")
+        void createsOnePhotoForDuplicateHashes() throws Exception {
+            // given
+            givenMemberOfOpenAlbum(1L);
+            given(photoRepository.findAllByAlbumIdAndContentHashes(ALBUM_ID, List.of(HASH_A, HASH_B)))
+                    .willReturn(List.of());
+            givenSaveAllAssignsIds();
+            givenUploadUrls();
+
+            // when
+            PhotoUploadResult result = photoCommandService.createPhotoUploads(
+                    1L, ALBUM_ID, command(file(HASH_A), file(HASH_B), file(HASH_A)));
+
+            // then
+            assertThat(result.files())
+                    .extracting(FileResult::contentHash, FileResult::photoId)
+                    .containsExactly(tuple(HASH_A, 100L), tuple(HASH_B, 101L), tuple(HASH_A, 100L));
+            then(photoRepository).should().saveAll(argThat(photos -> photos.size() == 2));
+        }
+
+        @Test
+        @DisplayName("참여자가 아니면 PhotoNotAlbumMemberException 이고 사진을 조회하지 않는다")
+        void throwsWhenNotMember() {
+            // given
+            given(albumQueryApi.getInfo(ALBUM_ID))
+                    .willReturn(new AlbumInfo(ALBUM_ID, LocalDateTime.now().plusDays(1)));
+            given(albumQueryApi.isMember(ALBUM_ID, 3L)).willReturn(false);
+
+            // when & then
+            assertThatThrownBy(() -> photoCommandService.createPhotoUploads(3L, ALBUM_ID, command(file(HASH_A))))
+                    .isInstanceOf(PhotoNotAlbumMemberException.class);
+            then(photoRepository).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("만료된 앨범이면 PhotoAlbumExpiredException")
+        void throwsWhenAlbumExpired() {
+            // given
+            given(albumQueryApi.getInfo(ALBUM_ID))
+                    .willReturn(new AlbumInfo(ALBUM_ID, LocalDateTime.now().minusDays(1)));
+            given(albumQueryApi.isMember(ALBUM_ID, 1L)).willReturn(true);
+
+            // when & then
+            assertThatThrownBy(() -> photoCommandService.createPhotoUploads(1L, ALBUM_ID, command(file(HASH_A))))
+                    .isInstanceOf(PhotoAlbumExpiredException.class);
+            then(photoRepository).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("파일 하나라도 형식이 안 맞으면 요청 전체를 거절하고 저장하지 않는다")
+        void rejectsWholeRequestWhenOneFileInvalid() {
+            // given
+            givenMemberOfOpenAlbum(1L);
+            given(photoRepository.findAllByAlbumIdAndContentHashes(ALBUM_ID, List.of(HASH_A, HASH_B)))
+                    .willReturn(List.of());
+
+            // when & then
+            assertThatThrownBy(() -> photoCommandService.createPhotoUploads(
+                            1L, ALBUM_ID, command(file(HASH_A), new UploadFile(HASH_B, 1000L, "video/quicktime"))))
+                    .isInstanceOf(PhotoUnsupportedTypeException.class);
+            then(photoRepository).should(never()).saveAll(anyList());
+        }
+    }
+
+    private void givenMemberOfOpenAlbum(Long userId) {
+        given(albumQueryApi.getInfo(ALBUM_ID))
+                .willReturn(new AlbumInfo(ALBUM_ID, LocalDateTime.now().plusDays(1)));
+        given(albumQueryApi.isMember(ALBUM_ID, userId)).willReturn(true);
+    }
+
+    // IDENTITY 전략처럼 저장하면 id 가 채워지게 한다 (100 부터 순서대로).
+    private void givenSaveAllAssignsIds() {
+        given(photoRepository.saveAll(anyList())).willAnswer(invocation -> {
+            List<Photo> photos = invocation.getArgument(0);
+            long id = 100L;
+            for (Photo photo : photos) {
+                ReflectionTestUtils.setField(photo, "id", id++);
+            }
+            return photos;
+        });
+    }
+
+    private void givenUploadUrls() throws Exception {
+        given(photoStorage.uploadUrlExpiry()).willReturn(Duration.ofMinutes(15));
+        for (String hash : List.of(HASH_A, HASH_B)) {
+            lenient()
+                    .when(photoStorage.createUploadUrl("albums/10/originals/" + hash, "image/jpeg"))
+                    .thenReturn(URI.create(uploadUrl(hash)).toURL());
+        }
+    }
+
+    private static String uploadUrl(String hash) {
+        return "http://storage/upload/" + hash.charAt(0);
+    }
+
+    private static UploadFile file(String hash) {
+        return new UploadFile(hash, PhotoFixture.BYTE_SIZE, "image/jpeg");
+    }
+
+    private static PhotoUploadCommand command(UploadFile... files) {
+        return new PhotoUploadCommand(List.of(files));
+    }
+}
