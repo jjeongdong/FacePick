@@ -62,7 +62,7 @@ class AlbumControllerTest {
     void createAlbum() throws Exception {
         // given
         given(albumCommandService.createAlbum(1L, new AlbumCreateCommand("제주 여행")))
-                .willReturn(new AlbumCreateResult(10L, "제주 여행", NOW.plusDays(30), NOW));
+                .willReturn(new AlbumCreateResult(10L, "제주 여행", "jeju-invite-code", NOW.plusDays(30), NOW));
 
         // when & then
         mockMvc.perform(post("/api/albums")
@@ -70,7 +70,8 @@ class AlbumControllerTest {
                         .content("{\"title\":\"제주 여행\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.albumId").value(10))
-                .andExpect(jsonPath("$.title").value("제주 여행"));
+                .andExpect(jsonPath("$.title").value("제주 여행"))
+                .andExpect(jsonPath("$.inviteCode").value("jeju-invite-code"));
     }
 
     @Test

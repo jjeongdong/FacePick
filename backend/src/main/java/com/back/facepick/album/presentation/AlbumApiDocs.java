@@ -15,7 +15,7 @@ import org.springframework.http.ResponseEntity;
 @Tag(name = "[앨범] 앨범 API")
 public interface AlbumApiDocs {
 
-    @Operation(summary = "앨범 생성", description = "앨범을 만들고 만든 사람을 앨범장으로 등록합니다. 30일 뒤 만료됩니다. (201)")
+    @Operation(summary = "앨범 생성", description = "앨범을 만들고 만든 사람을 앨범장으로 등록합니다. 초대 코드를 함께 발급하며 30일 뒤 만료됩니다. (201)")
     ResponseEntity<AlbumCreateResult> createAlbum(
             @Parameter(hidden = true) Long userId, @Valid AlbumCreateRequest request);
 

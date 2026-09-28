@@ -12,7 +12,7 @@ class AlbumMemberTest {
     @DisplayName("앨범·사용자·역할로 참여자를 만든다")
     void createsMember() {
         // given
-        Album album = Album.create(1L, "제주 여행", LocalDateTime.of(2026, 9, 1, 12, 0));
+        Album album = Album.create(1L, "제주 여행", LocalDateTime.of(2026, 9, 1, 12, 0), "jeju-invite-code");
 
         // when
         AlbumMember member = AlbumMember.create(album, 2L, AlbumRole.MEMBER);

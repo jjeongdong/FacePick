@@ -12,8 +12,10 @@ import com.back.facepick.album.domain.Album;
 import com.back.facepick.album.domain.AlbumMemberRepository;
 import com.back.facepick.album.domain.AlbumRepository;
 import com.back.facepick.album.domain.AlbumRole;
+import com.back.facepick.album.domain.InviteCodeGenerator;
 import com.back.facepick.album.fixture.AlbumFixture;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -29,25 +31,38 @@ class AlbumCommandServiceTest {
     @Mock
     private AlbumMemberRepository albumMemberRepository;
 
+    @Mock
+    private InviteCodeGenerator inviteCodeGenerator;
+
     @InjectMocks
     private AlbumCommandService albumCommandService;
 
-    @Test
-    @DisplayName("앨범을 만들면 만든 사람을 앨범장으로 등록한다")
-    void createAlbumRegistersOwner() {
-        // given
-        Album album = AlbumFixture.album(10L, 1L);
-        given(albumRepository.save(any(Album.class))).willReturn(album);
+    @Nested
+    @DisplayName("앨범 생성")
+    class CreateAlbum {
 
-        // when
-        AlbumCreateResult result = albumCommandService.createAlbum(1L, new AlbumCreateCommand("제주 여행"));
+        @Test
+        @DisplayName("초대 코드를 발급해 앨범을 만들고 만든 사람을 앨범장으로 등록한다")
+        void createsAlbumWithInviteCodeAndOwner() {
+            // given
+            Album album = AlbumFixture.album(10L, 1L);
+            given(inviteCodeGenerator.generate()).willReturn(AlbumFixture.INVITE_CODE);
+            given(albumRepository.save(any(Album.class))).willReturn(album);
 
-        // then
-        assertThat(result).isEqualTo(new AlbumCreateResult(10L, "제주 여행", album.getExpiresAt(), AlbumFixture.NOW));
-        then(albumMemberRepository)
-                .should()
-                .save(argThat(member -> member.getAlbum() == album
-                        && member.getUserId().equals(1L)
-                        && member.getRole() == AlbumRole.OWNER));
+            // when
+            AlbumCreateResult result = albumCommandService.createAlbum(1L, new AlbumCreateCommand("제주 여행"));
+
+            // then
+            assertThat(result)
+                    .isEqualTo(new AlbumCreateResult(
+                            10L, "제주 여행", AlbumFixture.INVITE_CODE, album.getExpiresAt(), AlbumFixture.NOW));
+            then(albumRepository).should().save(argThat(saved -> saved.getInviteCode()
+                    .equals(AlbumFixture.INVITE_CODE)));
+            then(albumMemberRepository)
+                    .should()
+                    .save(argThat(member -> member.getAlbum() == album
+                            && member.getUserId().equals(1L)
+                            && member.getRole() == AlbumRole.OWNER));
+        }
     }
 }

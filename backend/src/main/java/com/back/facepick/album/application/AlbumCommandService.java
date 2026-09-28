@@ -7,6 +7,7 @@ import com.back.facepick.album.domain.AlbumMember;
 import com.back.facepick.album.domain.AlbumMemberRepository;
 import com.back.facepick.album.domain.AlbumRepository;
 import com.back.facepick.album.domain.AlbumRole;
+import com.back.facepick.album.domain.InviteCodeGenerator;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -17,10 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class AlbumCommandService {
     private final AlbumRepository albumRepository;
     private final AlbumMemberRepository albumMemberRepository;
+    private final InviteCodeGenerator inviteCodeGenerator;
 
     @Transactional
     public AlbumCreateResult createAlbum(Long userId, AlbumCreateCommand command) {
-        Album album = albumRepository.save(Album.create(userId, command.title(), LocalDateTime.now()));
+        Album album = albumRepository.save(
+                Album.create(userId, command.title(), LocalDateTime.now(), inviteCodeGenerator.generate()));
         albumMemberRepository.save(AlbumMember.create(album, userId, AlbumRole.OWNER));
         return AlbumCreateResult.from(album);
     }
