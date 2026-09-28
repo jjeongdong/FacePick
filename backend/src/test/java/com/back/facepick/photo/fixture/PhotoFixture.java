@@ -28,4 +28,16 @@ public final class PhotoFixture {
         photo.complete(uploaderId, BYTE_SIZE, NOW);
         return photo;
     }
+
+    public static Photo processed(Long photoId, Long albumId, Long uploaderId, String hash) {
+        Photo photo = uploaded(photoId, albumId, uploaderId, hash);
+        // 썸네일 워커만 쓰는 읽기 전용 컬럼이라 리플렉션으로 채운다.
+        ReflectionTestUtils.setField(photo, "thumbnailKey", "albums/" + albumId + "/thumbnails/" + hash + ".jpg");
+        ReflectionTestUtils.setField(photo, "previewKey", "albums/" + albumId + "/previews/" + hash + ".jpg");
+        ReflectionTestUtils.setField(photo, "width", 4032);
+        ReflectionTestUtils.setField(photo, "height", 3024);
+        ReflectionTestUtils.setField(photo, "takenAt", NOW.minusDays(3));
+        ReflectionTestUtils.setField(photo, "processedAt", NOW.plusMinutes(1));
+        return photo;
+    }
 }

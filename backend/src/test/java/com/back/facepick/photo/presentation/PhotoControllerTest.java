@@ -1,20 +1,30 @@
 package com.back.facepick.photo.presentation;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.back.facepick.global.authorization.resolver.AuthUserArgumentResolver;
 import com.back.facepick.global.error.GlobalExceptionHandler;
+import com.back.facepick.global.response.CursorPageResult;
 import com.back.facepick.photo.application.PhotoCommandService;
+import com.back.facepick.photo.application.PhotoQueryService;
 import com.back.facepick.photo.application.dto.command.PhotoUploadCommand;
 import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
+import com.back.facepick.photo.application.dto.result.PhotoDetailResult;
+import com.back.facepick.photo.application.dto.result.PhotoSummaryResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.FileResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.Status;
 import com.back.facepick.photo.domain.PhotoStatus;
 import com.back.facepick.photo.domain.exception.PhotoFileMissingException;
+import com.back.facepick.photo.domain.exception.PhotoViewNotAlbumMemberException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -41,11 +51,14 @@ class PhotoControllerTest {
     @Mock
     private PhotoCommandService photoCommandService;
 
+    @Mock
+    private PhotoQueryService photoQueryService;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new PhotoController(photoCommandService))
+        mockMvc = MockMvcBuilders.standaloneSetup(new PhotoController(photoCommandService, photoQueryService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setCustomArgumentResolvers(new AuthUserArgumentResolver())
                 .build();
@@ -141,6 +154,91 @@ class PhotoControllerTest {
         mockMvc.perform(post("/api/photos/12/complete"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("PHOTO_FILE_MISSING"));
+    }
+
+    @Test
+    @DisplayName("GET /api/albums/{albumId}/photos 는 200 과 커서 페이지")
+    void getPhotos() throws Exception {
+        // given
+        given(photoQueryService.getPhotos(1L, 10L, "abc", 2))
+                .willReturn(new CursorPageResult<>(
+                        List.of(new PhotoSummaryResult(
+                                12L, "http://storage/thumb", 4032, 3024, NOW.minusDays(3), NOW, NOW.plusHours(1))),
+                        "next",
+                        true));
+
+        // when & then
+        mockMvc.perform(get("/api/albums/10/photos").param("cursor", "abc").param("size", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].photoId").value(12))
+                .andExpect(jsonPath("$.content[0].thumbnailUrl").value("http://storage/thumb"))
+                .andExpect(jsonPath("$.content[0].width").value(4032))
+                .andExpect(jsonPath("$.nextCursor").value("next"))
+                .andExpect(jsonPath("$.hasNext").value(true));
+    }
+
+    @Test
+    @DisplayName("size 를 빼면 20, 커서를 빼면 null 로 넘긴다")
+    void getPhotosUsesDefaults() throws Exception {
+        // given
+        given(photoQueryService.getPhotos(1L, 10L, null, 20)).willReturn(CursorPageResult.empty());
+
+        // when & then
+        mockMvc.perform(get("/api/albums/10/photos"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isEmpty())
+                .andExpect(jsonPath("$.hasNext").value(false));
+    }
+
+    @Test
+    @DisplayName("size 가 1~100 밖이거나 숫자가 아니면 400 INVALID_INPUT, 서비스를 부르지 않는다")
+    void rejectsInvalidSize() throws Exception {
+        // when & then
+        for (String size : List.of("0", "101", "abc")) {
+            mockMvc.perform(get("/api/albums/10/photos").param("size", size))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+        }
+        then(photoQueryService).should(never()).getPhotos(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    @DisplayName("GET /api/photos/{photoId} 는 200 과 미리보기·원본 URL")
+    void getPhoto() throws Exception {
+        // given
+        given(photoQueryService.getPhoto(1L, 12L))
+                .willReturn(new PhotoDetailResult(
+                        12L,
+                        10L,
+                        "image/heic",
+                        3456789L,
+                        4032,
+                        3024,
+                        NOW.minusDays(3),
+                        NOW,
+                        "http://storage/preview",
+                        "http://storage/original",
+                        NOW.plusHours(1)));
+
+        // when & then
+        mockMvc.perform(get("/api/photos/12"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.albumId").value(10))
+                .andExpect(jsonPath("$.contentType").value("image/heic"))
+                .andExpect(jsonPath("$.previewUrl").value("http://storage/preview"))
+                .andExpect(jsonPath("$.originalUrl").value("http://storage/original"));
+    }
+
+    @Test
+    @DisplayName("참여자가 아니면 403 PHOTO_VIEW_NOT_ALBUM_MEMBER")
+    void getPhotoRejectsNonMember() throws Exception {
+        // given
+        given(photoQueryService.getPhoto(1L, 12L)).willThrow(new PhotoViewNotAlbumMemberException());
+
+        // when & then
+        mockMvc.perform(get("/api/photos/12"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PHOTO_VIEW_NOT_ALBUM_MEMBER"));
     }
 
     // 첫 파일은 HASH, 나머지는 서로 다른 64자 16진수 해시.

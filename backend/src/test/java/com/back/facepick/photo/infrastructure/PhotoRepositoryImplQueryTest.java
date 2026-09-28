@@ -6,7 +6,9 @@ import static org.assertj.core.groups.Tuple.tuple;
 
 import com.back.facepick.global.config.data.JpaAuditingConfig;
 import com.back.facepick.photo.domain.Photo;
+import com.back.facepick.photo.domain.PhotoCursor;
 import com.back.facepick.photo.domain.exception.PhotoNotFoundException;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,6 +34,7 @@ class PhotoRepositoryImplQueryTest {
     private static final String HASH_A = "a".repeat(64);
     private static final String HASH_B = "b".repeat(64);
     private static final String HASH_C = "c".repeat(64);
+    private static final LocalDateTime T = LocalDateTime.of(2026, 9, 1, 12, 0);
 
     @Container
     @ServiceConnection
@@ -67,5 +70,130 @@ class PhotoRepositoryImplQueryTest {
     void throwsWhenMissing() {
         // when & then
         assertThatThrownBy(() -> photoRepository.getById(999L)).isInstanceOf(PhotoNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("첫 페이지 조회 - 완료 시각 최신 순으로, PENDING·다른 앨범은 빼고 limit 만큼")
+    void findsFirstPage() {
+        // given
+        Photo old = uploaded(1L, hash(1), T.minusHours(2));
+        Photo recent = uploaded(1L, hash(2), T);
+        Photo middle = uploaded(1L, hash(3), T.minusHours(1));
+        photoRepository.saveAll(List.of(
+                old,
+                recent,
+                middle,
+                Photo.create(1L, 1L, hash(4), 1000L, "image/jpeg"),
+                uploaded(2L, hash(5), T.plusHours(1))));
+        flushAndClear();
+
+        // when
+        List<Photo> photos = photoRepository.findUploadedByAlbumId(1L, 2);
+
+        // then
+        assertThat(photos).extracting(Photo::getId).containsExactly(recent.getId(), middle.getId());
+    }
+
+    @Test
+    @DisplayName("커서 이후 조회 - 같은 완료 시각이면 photo_id 로 이어서, 겹치거나 빠지지 않는다")
+    void continuesAfterCursorWithSameUploadedAt() {
+        // given
+        Photo first = uploaded(1L, hash(1), T);
+        Photo second = uploaded(1L, hash(2), T);
+        Photo third = uploaded(1L, hash(3), T);
+        Photo older = uploaded(1L, hash(4), T.minusMinutes(1));
+        photoRepository.saveAll(List.of(first, second, third, older));
+        flushAndClear();
+        List<Photo> firstPage = photoRepository.findUploadedByAlbumId(1L, 2);
+
+        // when
+        List<Photo> nextPage = photoRepository.findUploadedByAlbumIdAfter(1L, PhotoCursor.from(firstPage.getLast()), 2);
+
+        // then
+        assertThat(firstPage).extracting(Photo::getId).containsExactly(third.getId(), second.getId());
+        assertThat(nextPage).extracting(Photo::getId).containsExactly(first.getId(), older.getId());
+    }
+
+    @Test
+    @DisplayName("업로드 사진 단건 조회 - PENDING 이면 PhotoNotFoundException")
+    void throwsForPendingPhoto() {
+        // given
+        Photo pending = Photo.create(1L, 1L, hash(1), 1000L, "image/jpeg");
+        photoRepository.saveAll(List.of(pending));
+        flushAndClear();
+
+        // when & then
+        assertThatThrownBy(() -> photoRepository.getUploadedById(pending.getId()))
+                .isInstanceOf(PhotoNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("업로드 사진 단건 조회 - 워커가 쓴 컬럼을 읽는다")
+    void readsWorkerColumns() {
+        // given
+        Photo photo = uploaded(1L, hash(1), T);
+        photoRepository.saveAll(List.of(photo));
+        entityManager.flush();
+        writeWorkerColumns(photo.getId());
+        entityManager.clear();
+
+        // when
+        Photo found = photoRepository.getUploadedById(photo.getId());
+
+        // then
+        assertThat(found.getThumbnailKey()).isEqualTo("albums/1/thumbnails/x.jpg");
+        assertThat(found.getPreviewKey()).isEqualTo("albums/1/previews/x.jpg");
+        assertThat(found.getWidth()).isEqualTo(4032);
+        assertThat(found.getHeight()).isEqualTo(3024);
+        assertThat(found.getTakenAt()).isEqualTo(LocalDateTime.of(2026, 8, 30, 10, 0));
+        assertThat(found.isProcessed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("워커 컬럼 보존 - 백엔드가 사진을 UPDATE 해도 워커 값이 지워지지 않는다")
+    void keepsWorkerColumnsOnUpdate() {
+        // given
+        Photo photo = Photo.create(1L, 1L, hash(1), 1000L, "image/jpeg");
+        photoRepository.saveAll(List.of(photo));
+        flushAndClear();
+        // 워커 값이 없을 때 읽어 둔 엔티티를, 워커가 쓴 뒤에 고치는 순서를 재현한다.
+        Photo loaded = photoRepository.getById(photo.getId());
+        writeWorkerColumns(photo.getId());
+
+        // when
+        loaded.reassignUploader(2L);
+        flushAndClear();
+
+        // then
+        Photo reloaded = photoRepository.getById(photo.getId());
+        assertThat(reloaded.getUploaderId()).isEqualTo(2L);
+        assertThat(reloaded.getThumbnailKey()).isEqualTo("albums/1/thumbnails/x.jpg");
+    }
+
+    private static Photo uploaded(Long albumId, String hash, LocalDateTime uploadedAt) {
+        Photo photo = Photo.create(albumId, 1L, hash, 1000L, "image/jpeg");
+        photo.complete(1L, 1000L, uploadedAt);
+        return photo;
+    }
+
+    private static String hash(int number) {
+        return String.format("%064x", number);
+    }
+
+    private void flushAndClear() {
+        entityManager.flush();
+        entityManager.clear();
+    }
+
+    // 썸네일 워커가 하는 UPDATE 를 그대로 흉내 낸다 (엔티티에서는 쓸 수 없는 컬럼).
+    private void writeWorkerColumns(Long photoId) {
+        entityManager
+                .getEntityManager()
+                .createNativeQuery("UPDATE photos SET thumbnail_key = 'albums/1/thumbnails/x.jpg',"
+                        + " preview_key = 'albums/1/previews/x.jpg', width = 4032, height = 3024,"
+                        + " taken_at = TIMESTAMP '2026-08-30 10:00:00', processed_at = TIMESTAMP '2026-09-01 12:01:00'"
+                        + " WHERE photo_id = :photoId")
+                .setParameter("photoId", photoId)
+                .executeUpdate();
     }
 }

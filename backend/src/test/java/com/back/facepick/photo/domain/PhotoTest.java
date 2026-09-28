@@ -8,10 +8,12 @@ import com.back.facepick.photo.domain.exception.PhotoNotUploaderException;
 import com.back.facepick.photo.domain.exception.PhotoSizeMismatchException;
 import com.back.facepick.photo.domain.exception.PhotoTooLargeException;
 import com.back.facepick.photo.domain.exception.PhotoUnsupportedTypeException;
+import com.back.facepick.photo.fixture.PhotoFixture;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class PhotoTest {
 
@@ -152,6 +154,63 @@ class PhotoTest {
             // when & then
             assertThatThrownBy(() -> photo.complete(1L, 999L, NOW)).isInstanceOf(PhotoSizeMismatchException.class);
             assertThat(photo.getStatus()).isEqualTo(PhotoStatus.PENDING);
+        }
+    }
+
+    @Nested
+    @DisplayName("처리 여부")
+    class IsProcessed {
+
+        @Test
+        @DisplayName("워커가 처리하기 전이면 false")
+        void falseBeforeWorker() {
+            // given
+            Photo photo = PhotoFixture.uploaded(12L, 10L, 1L, HASH);
+
+            // when & then
+            assertThat(photo.isProcessed()).isFalse();
+        }
+
+        @Test
+        @DisplayName("워커가 처리 시각을 남겼으면 true")
+        void trueAfterWorker() {
+            // given
+            Photo photo = PhotoFixture.processed(12L, 10L, 1L, HASH);
+
+            // when & then
+            assertThat(photo.isProcessed()).isTrue();
+        }
+    }
+
+    @Nested
+    @DisplayName("다운로드 파일명")
+    class DownloadFileName {
+
+        @Test
+        @DisplayName("사진 ID 와 형식별 확장자로 만든다")
+        void usesIdAndExtension() {
+            // given
+            Photo jpeg = PhotoFixture.uploaded(12L, 10L, 1L, HASH);
+
+            // when & then
+            assertThat(jpeg.downloadFileName()).isEqualTo("facepick-12.jpg");
+        }
+
+        @Test
+        @DisplayName("업로드 허용 형식마다 확장자가 있다")
+        void coversEverySupportedType() {
+            // given
+            String[][] cases = {
+                {"image/png", "png"}, {"image/heic", "heic"}, {"image/heif", "heif"}, {"image/x-adobe-dng", "dng"}
+            };
+
+            for (String[] testCase : cases) {
+                Photo photo = Photo.create(10L, 1L, HASH, 1000L, testCase[0]);
+                ReflectionTestUtils.setField(photo, "id", 7L);
+
+                // when & then
+                assertThat(photo.downloadFileName()).isEqualTo("facepick-7." + testCase[1]);
+            }
         }
     }
 }
