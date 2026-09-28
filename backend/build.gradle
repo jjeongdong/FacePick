@@ -1,0 +1,113 @@
+plugins {
+    id 'java'
+    id 'jacoco'
+    id 'org.springframework.boot' version '4.1.1'
+    id 'io.spring.dependency-management' version '1.1.7'
+    id 'com.diffplug.spotless' version '8.10.3'
+}
+
+group = 'com.back'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+spotless {
+    java {
+        target 'src/*/java/**/*.java'
+        palantirJavaFormat('2.50.0')
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+dependencies {
+    // Lombok
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    // Spring Boot starters
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.boot:spring-boot-starter-kafka'
+
+    // Persistence (스키마는 Flyway 가 관리한다. Python 워커와 테이블을 공유하기 때문)
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    implementation 'org.flywaydb:flyway-database-postgresql'
+    runtimeOnly 'org.postgresql:postgresql'
+
+    // S3 호환 스토리지 (SeaweedFS / Cloudflare R2)
+    implementation platform('software.amazon.awssdk:bom:2.55.6')
+    implementation 'software.amazon.awssdk:s3'
+
+    // OpenAPI / Swagger
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
+
+    // Test
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
+    testImplementation 'com.tngtech.archunit:archunit-junit5:1.3.0'
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    // 벤치는 고정 지연·로컬 DB 에 기대 느리고 환경을 타므로 기본 빌드에서 뺀다.
+    useJUnitPlatform {
+        excludeTags 'bench'
+    }
+    finalizedBy jacocoTestReport   // 테스트가 실패해도 실행분까지의 리포트는 생성된다
+}
+
+tasks.register('benchTest', Test) {
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'bench'
+    }
+}
+
+// ── 테스트 커버리지 (JaCoCo) ──────────────────────────────────────────
+// 리포트: build/reports/jacoco/test/html/index.html (XML: .../jacocoTestReport.xml)
+//
+// 전체 실행:      ./gradlew test jacocoTestReport
+// 컨텍스트 한정:  ./gradlew test --tests "com.back.facepick.photo.*" jacocoTestReport
+//
+// 제외는 '로직이 없어 테스트 대상이 아닌 것'으로 한정한다. 수치를 인용할 땐 제외 목록을 함께 밝힌다.
+jacoco {
+    toolVersion = '0.8.12'   // Java 21 지원
+}
+
+tasks.named('jacocoTestReport') {
+    dependsOn tasks.named('test')
+    reports {
+        html.required = true
+        xml.required = true      // CI·뱃지 연동용
+        csv.required = false
+    }
+    classDirectories.setFrom(files(sourceSets.main.output.classesDirs.collect {
+        fileTree(dir: it, exclude: [
+            '**/FacepickApplication.class',
+            '**/config/**',            // 빈 설정 (global/config, 각 컨텍스트 Config)
+            '**/dto/**',               // Command/Result/Info record (필드 복사)
+        ])
+    }))
+}
+
+bootJar { enabled = true }
+jar { enabled = false }

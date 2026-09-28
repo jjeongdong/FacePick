@@ -1,0 +1,13 @@
+[project]
+name = "thumbnail-worker"
+version = "0.1.0"
+description = "photo.uploaded를 받아 썸네일·미리보기를 만들고 photo.preview_ready를 발행한다 (내 컴퓨터에서 실행)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "confluent-kafka",   # Kafka 컨슈머/프로듀서
+    "boto3",             # S3 호환 스토리지 (SeaweedFS / R2)
+    "pillow",            # 이미지 리사이즈, EXIF 회전
+    "pillow-heif",       # iPhone HEIC 디코딩
+    "psycopg[binary]",   # photos 테이블 갱신
+    "python-dotenv",
+]

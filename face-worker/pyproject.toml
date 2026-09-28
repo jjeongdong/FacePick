@@ -1,0 +1,16 @@
+[project]
+name = "face-worker"
+version = "0.1.0"
+description = "photo.preview_ready를 받아 얼굴을 분석하고 인물별로 묶는다 (워커 노트북에서 실행)"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "confluent-kafka",   # Kafka 컨슈머
+    "boto3",             # 미리보기 다운로드
+    "insightface",       # 얼굴 검출(SCRFD) + 임베딩(ArcFace). 사전학습 모델은 비상업 라이선스
+    "onnxruntime",       # 모델 실행 (NVIDIA면 onnxruntime-gpu)
+    "opencv-python-headless",
+    "numpy",
+    "psycopg[binary]",   # faces, persons 저장
+    "pgvector",          # vector 타입 어댑터
+    "python-dotenv",
+]

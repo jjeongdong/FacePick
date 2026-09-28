@@ -1,0 +1,26 @@
+server:
+  shutdown: graceful
+
+spring:
+  application:
+    name: facepick-backend
+  profiles:
+    active: local
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  jpa:
+    open-in-view: false
+    hibernate:
+      # 스키마는 Flyway 가 관리한다. Python 워커도 같은 테이블을 쓰므로 JPA 가 스키마를 바꾸지 않게 한다.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_batch_fetch_size: 500
+
+storage:
+  region: us-east-1
+  bucket: photos
+  presign-minutes: 15
+
+album:
+  retention-days: 30

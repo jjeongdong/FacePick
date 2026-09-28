@@ -1,0 +1,22 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5433/facepick
+    username: facepick
+    password: facepick
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  kafka:
+    bootstrap-servers: localhost:9092
+  jackson:
+    time-zone: Asia/Seoul
+
+storage:
+  # 서버가 스토리지에 접속하는 주소
+  endpoint: http://localhost:9000
+  # 서명 URL 에 들어가는 주소. 앱·워커가 실제로 접속하는 주소여야 한다.
+  public-endpoint: http://localhost:9000
+  access-key: facepick
+  secret-key: facepick-secret
