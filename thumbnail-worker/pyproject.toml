@@ -11,3 +11,19 @@ dependencies = [
     "psycopg[binary]",   # photos 테이블 갱신
     "python-dotenv",
 ]
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+# 기본 실행은 단위 테스트만. 통합은 `uv run pytest -m integration` (docker compose 인프라 필요).
+addopts = "-m 'not integration'"
+markers = ["integration: docker compose 인프라(Postgres·SeaweedFS·Kafka)와 V6 가 필요한 테스트"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
