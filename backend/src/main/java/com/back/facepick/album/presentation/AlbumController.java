@@ -4,8 +4,11 @@ import com.back.facepick.album.application.AlbumCommandService;
 import com.back.facepick.album.application.AlbumQueryService;
 import com.back.facepick.album.application.dto.result.AlbumCreateResult;
 import com.back.facepick.album.application.dto.result.AlbumDetailResult;
+import com.back.facepick.album.application.dto.result.AlbumInviteResult;
+import com.back.facepick.album.application.dto.result.AlbumJoinResult;
 import com.back.facepick.album.application.dto.result.AlbumResult;
 import com.back.facepick.album.presentation.dto.request.AlbumCreateRequest;
+import com.back.facepick.album.presentation.dto.request.AlbumJoinRequest;
 import com.back.facepick.global.authorization.annotation.AuthUser;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -43,5 +46,23 @@ public class AlbumController implements AlbumApiDocs {
     @GetMapping("/{albumId}")
     public ResponseEntity<AlbumDetailResult> getAlbum(@AuthUser Long userId, @PathVariable Long albumId) {
         return ResponseEntity.ok(albumQueryService.getAlbum(userId, albumId));
+    }
+
+    @Override
+    @GetMapping("/{albumId}/invite")
+    public ResponseEntity<AlbumInviteResult> getAlbumInvite(@AuthUser Long userId, @PathVariable Long albumId) {
+        return ResponseEntity.ok(albumQueryService.getAlbumInvite(userId, albumId));
+    }
+
+    @Override
+    @PostMapping("/{albumId}/invite")
+    public ResponseEntity<AlbumInviteResult> reissueAlbumInvite(@AuthUser Long userId, @PathVariable Long albumId) {
+        return ResponseEntity.ok(albumCommandService.reissueAlbumInvite(userId, albumId));
+    }
+
+    @Override
+    @PostMapping("/join")
+    public ResponseEntity<AlbumJoinResult> joinAlbum(@AuthUser Long userId, @RequestBody AlbumJoinRequest request) {
+        return ResponseEntity.ok(albumCommandService.joinAlbum(userId, request.toCommand()));
     }
 }

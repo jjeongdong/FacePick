@@ -3,6 +3,7 @@ package com.back.facepick.album.infrastructure;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 
+import com.back.facepick.album.domain.exception.AlbumInviteNotFoundException;
 import com.back.facepick.album.domain.exception.AlbumNotFoundException;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -29,5 +30,16 @@ class AlbumRepositoryImplTest {
 
         // when & then
         assertThatThrownBy(() -> albumRepository.getById(99L)).isInstanceOf(AlbumNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("초대 코드에 맞는 앨범이 없으면 AlbumInviteNotFoundException 을 던진다")
+    void getByInviteCodeThrowsWhenMissing() {
+        // given
+        given(albumJpaRepository.findByInviteCode("wrong-code")).willReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() -> albumRepository.getByInviteCode("wrong-code"))
+                .isInstanceOf(AlbumInviteNotFoundException.class);
     }
 }

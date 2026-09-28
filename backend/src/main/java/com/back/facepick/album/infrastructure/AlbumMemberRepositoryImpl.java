@@ -25,6 +25,11 @@ public class AlbumMemberRepositoryImpl implements AlbumMemberRepository {
     }
 
     @Override
+    public boolean existsByAlbumIdAndUserId(Long albumId, Long userId) {
+        return albumMemberJpaRepository.existsByAlbumIdAndUserId(albumId, userId);
+    }
+
+    @Override
     public List<AlbumMember> findAllByUserIdWithAlbum(Long userId) {
         return albumMemberJpaRepository.findAllByUserIdWithAlbum(userId);
     }

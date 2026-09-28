@@ -12,6 +12,9 @@ public interface AlbumMemberJpaRepository extends JpaRepository<AlbumMember, Lon
     @Query("select m from AlbumMember m where m.album.id = :albumId and m.userId = :userId")
     Optional<AlbumMember> findByAlbumIdAndUserId(@Param("albumId") Long albumId, @Param("userId") Long userId);
 
+    @Query("select count(m) > 0 from AlbumMember m where m.album.id = :albumId and m.userId = :userId")
+    boolean existsByAlbumIdAndUserId(@Param("albumId") Long albumId, @Param("userId") Long userId);
+
     // 목록에서 앨범 제목·만료일을 함께 쓰므로 fetch join 으로 N+1 을 막는다.
     @Query("select m from AlbumMember m join fetch m.album where m.userId = :userId"
             + " order by m.createdAt desc, m.id desc")

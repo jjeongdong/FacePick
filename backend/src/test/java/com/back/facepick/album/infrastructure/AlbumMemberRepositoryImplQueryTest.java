@@ -49,8 +49,8 @@ class AlbumMemberRepositoryImplQueryTest {
     @DisplayName("내 앨범 목록 - 내가 참여한 앨범만 최근 참여순으로, 앨범을 함께 불러온다")
     void findsMyAlbumsLatestFirstWithAlbum() {
         // given
-        Album jeju = entityManager.persist(Album.create(1L, "제주", NOW));
-        Album busan = entityManager.persist(Album.create(2L, "부산", NOW));
+        Album jeju = entityManager.persist(Album.create(1L, "제주", NOW, "jeju-code"));
+        Album busan = entityManager.persist(Album.create(2L, "부산", NOW, "busan-code"));
         albumMemberRepository.save(AlbumMember.create(jeju, 1L, AlbumRole.OWNER));
         albumMemberRepository.save(AlbumMember.create(busan, 2L, AlbumRole.OWNER));
         albumMemberRepository.save(AlbumMember.create(busan, 1L, AlbumRole.MEMBER));
@@ -70,11 +70,27 @@ class AlbumMemberRepositoryImplQueryTest {
     @DisplayName("참여자 조회 - 참여하지 않은 앨범이면 AlbumNotMemberException")
     void throwsWhenNotMember() {
         // given
-        Album jeju = entityManager.persist(Album.create(1L, "제주", NOW));
+        Album jeju = entityManager.persist(Album.create(1L, "제주", NOW, "jeju-code"));
         albumMemberRepository.save(AlbumMember.create(jeju, 1L, AlbumRole.OWNER));
 
         // when & then
         assertThatThrownBy(() -> albumMemberRepository.getByAlbumIdAndUserId(jeju.getId(), 2L))
                 .isInstanceOf(AlbumNotMemberException.class);
+    }
+
+    @Test
+    @DisplayName("참여 여부 - 참여한 앨범이면 true, 아니면 false")
+    void checksMembership() {
+        // given
+        Album jeju = entityManager.persist(Album.create(1L, "제주", NOW, "jeju-code"));
+        albumMemberRepository.save(AlbumMember.create(jeju, 1L, AlbumRole.OWNER));
+        entityManager.flush();
+        entityManager.clear();
+
+        // when & then
+        assertThat(albumMemberRepository.existsByAlbumIdAndUserId(jeju.getId(), 1L))
+                .isTrue();
+        assertThat(albumMemberRepository.existsByAlbumIdAndUserId(jeju.getId(), 2L))
+                .isFalse();
     }
 }
