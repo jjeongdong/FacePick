@@ -13,6 +13,10 @@ THUMBNAIL_MAX_SIDE = 400
 PREVIEW_MAX_SIDE = 2048
 JPEG_QUALITY = 85
 
+# 백엔드 허용 형식 중 Pillow 가 온전히 읽는 것만. DNG(TIFF 기반)는 IFD0 의 작은 미리보기만
+# 읽혀 저해상도·틀린 크기로 "성공"하므로 막는다. MPO 는 Pillow 가 일부 JPEG 에 붙이는 이름이다.
+_SUPPORTED_FORMATS = {"JPEG", "MPO", "PNG", "HEIF"}
+
 _EXIF_IFD = 0x8769
 _DATETIME_ORIGINAL = 0x9003
 
@@ -29,6 +33,10 @@ class Renditions:
 def render(original: bytes) -> Renditions:
     try:
         with Image.open(BytesIO(original)) as source:
+            if source.format not in _SUPPORTED_FORMATS:
+                raise PermanentError(
+                    "UNSUPPORTED_FORMAT", f"지원하지 않는 형식이다: {source.format}"
+                )
             taken_at = _taken_at(source)
             # CMYK·흑백 프로파일을 RGB JPEG 에 넣으면 색이 틀어지므로 RGB 계열만 옮긴다.
             icc_profile = source.info.get("icc_profile") if source.mode in ("RGB", "RGBA") else None

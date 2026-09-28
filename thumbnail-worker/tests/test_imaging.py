@@ -130,6 +130,19 @@ def test_truncated_jpeg_is_permanent_failure():
     assert error.value.error_type == "UNDECODABLE_IMAGE"
 
 
+def test_multi_page_tiff_like_dng_is_unsupported():
+    # DNG 는 TIFF 기반이고 IFD0 에 작은 미리보기를 둔다. Pillow 는 그 미리보기만 읽어
+    # 256px 결과로 "성공"해 버리므로 형식으로 막는다.
+    small_preview = Image.new("RGB", (256, 171), "red")
+    original = encode(
+        small_preview, "TIFF", save_all=True, append_images=[Image.new("RGB", (6000, 4000))]
+    )
+
+    with pytest.raises(PermanentError) as error:
+        render(original)
+    assert error.value.error_type == "UNSUPPORTED_FORMAT"
+
+
 def test_decompression_bomb_is_permanent_failure(monkeypatch):
     # 실제 1.8억 픽셀 이미지를 만들지 않고 한도를 낮춰 같은 경로를 탄다 (한도의 2배 초과 → 오류)
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1000)
