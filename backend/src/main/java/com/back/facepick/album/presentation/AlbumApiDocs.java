@@ -2,8 +2,11 @@ package com.back.facepick.album.presentation;
 
 import com.back.facepick.album.application.dto.result.AlbumCreateResult;
 import com.back.facepick.album.application.dto.result.AlbumDetailResult;
+import com.back.facepick.album.application.dto.result.AlbumInviteResult;
+import com.back.facepick.album.application.dto.result.AlbumJoinResult;
 import com.back.facepick.album.application.dto.result.AlbumResult;
 import com.back.facepick.album.presentation.dto.request.AlbumCreateRequest;
+import com.back.facepick.album.presentation.dto.request.AlbumJoinRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -24,4 +27,13 @@ public interface AlbumApiDocs {
 
     @Operation(summary = "앨범 조회", description = "앨범 정보를 조회합니다. 참여자만 조회할 수 있습니다.")
     ResponseEntity<AlbumDetailResult> getAlbum(@Parameter(hidden = true) Long userId, Long albumId);
+
+    @Operation(summary = "초대 코드 조회", description = "앨범 초대 코드를 조회합니다. 참여자만 조회할 수 있습니다.")
+    ResponseEntity<AlbumInviteResult> getAlbumInvite(@Parameter(hidden = true) Long userId, Long albumId);
+
+    @Operation(summary = "초대 코드 재발급", description = "새 초대 코드를 발급합니다. 이전 코드로는 더 이상 참여할 수 없습니다. 앨범장만 할 수 있습니다.")
+    ResponseEntity<AlbumInviteResult> reissueAlbumInvite(@Parameter(hidden = true) Long userId, Long albumId);
+
+    @Operation(summary = "초대 코드로 참여", description = "초대 코드로 앨범에 참여합니다. 이미 참여한 앨범이면 그대로 성공합니다. 만료된 앨범에는 참여할 수 없습니다.")
+    ResponseEntity<AlbumJoinResult> joinAlbum(@Parameter(hidden = true) Long userId, @Valid AlbumJoinRequest request);
 }

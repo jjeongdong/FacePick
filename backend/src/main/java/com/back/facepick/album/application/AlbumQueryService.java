@@ -1,6 +1,7 @@
 package com.back.facepick.album.application;
 
 import com.back.facepick.album.application.dto.result.AlbumDetailResult;
+import com.back.facepick.album.application.dto.result.AlbumInviteResult;
 import com.back.facepick.album.application.dto.result.AlbumResult;
 import com.back.facepick.album.domain.Album;
 import com.back.facepick.album.domain.AlbumMemberRepository;
@@ -33,5 +34,13 @@ public class AlbumQueryService {
         return albumMemberRepository.findAllByUserIdWithAlbum(userId).stream()
                 .map(AlbumResult::from)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public AlbumInviteResult getAlbumInvite(Long userId, Long albumId) {
+        Album album = albumRepository.getById(albumId);
+        // 참여자가 아니면 AlbumNotMemberException(403). 없는 앨범은 위에서 404 가 먼저 난다.
+        albumMemberRepository.getByAlbumIdAndUserId(albumId, userId);
+        return AlbumInviteResult.from(album);
     }
 }

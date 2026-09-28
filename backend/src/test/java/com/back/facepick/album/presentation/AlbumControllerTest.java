@@ -9,9 +9,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.back.facepick.album.application.AlbumCommandService;
 import com.back.facepick.album.application.AlbumQueryService;
 import com.back.facepick.album.application.dto.command.AlbumCreateCommand;
+import com.back.facepick.album.application.dto.command.AlbumJoinCommand;
 import com.back.facepick.album.application.dto.result.AlbumCreateResult;
+import com.back.facepick.album.application.dto.result.AlbumInviteResult;
+import com.back.facepick.album.application.dto.result.AlbumJoinResult;
 import com.back.facepick.album.application.dto.result.AlbumResult;
 import com.back.facepick.album.domain.AlbumRole;
+import com.back.facepick.album.domain.exception.AlbumInviteNotFoundException;
+import com.back.facepick.album.domain.exception.AlbumNotOwnerException;
 import com.back.facepick.global.authorization.resolver.AuthUserArgumentResolver;
 import com.back.facepick.global.error.GlobalExceptionHandler;
 import java.time.LocalDateTime;
@@ -98,5 +103,72 @@ class AlbumControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].albumId").value(10))
                 .andExpect(jsonPath("$[0].role").value("OWNER"));
+    }
+
+    @Test
+    @DisplayName("GET /api/albums/{albumId}/invite 는 200 과 초대 코드")
+    void getAlbumInvite() throws Exception {
+        // given
+        given(albumQueryService.getAlbumInvite(1L, 10L)).willReturn(new AlbumInviteResult("jeju-invite-code"));
+
+        // when & then
+        mockMvc.perform(get("/api/albums/10/invite"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.inviteCode").value("jeju-invite-code"));
+    }
+
+    @Test
+    @DisplayName("앨범장이 아니면 POST /api/albums/{albumId}/invite 는 403 ALBUM_NOT_OWNER")
+    void reissueAlbumInviteRejectsNonOwner() throws Exception {
+        // given
+        given(albumCommandService.reissueAlbumInvite(1L, 10L)).willThrow(new AlbumNotOwnerException());
+
+        // when & then
+        mockMvc.perform(post("/api/albums/10/invite"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ALBUM_NOT_OWNER"));
+    }
+
+    @Test
+    @DisplayName("POST /api/albums/join 은 200 과 참여한 앨범")
+    void joinAlbum() throws Exception {
+        // given
+        given(albumCommandService.joinAlbum(1L, new AlbumJoinCommand("jeju-invite-code")))
+                .willReturn(new AlbumJoinResult(10L, "제주 여행"));
+
+        // when & then
+        mockMvc.perform(post("/api/albums/join")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"inviteCode\":\"jeju-invite-code\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.albumId").value(10))
+                .andExpect(jsonPath("$.title").value("제주 여행"));
+    }
+
+    @Test
+    @DisplayName("공백뿐인 초대 코드면 400 INVALID_INPUT")
+    void joinAlbumRejectsBlankCode() throws Exception {
+        // when & then
+        mockMvc.perform(post("/api/albums/join")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"inviteCode\":\" \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
+                .andExpect(jsonPath("$.message").value("초대 코드를 입력해주세요."));
+    }
+
+    @Test
+    @DisplayName("없는 초대 코드면 404 ALBUM_INVITE_NOT_FOUND")
+    void joinAlbumRejectsUnknownCode() throws Exception {
+        // given
+        given(albumCommandService.joinAlbum(1L, new AlbumJoinCommand("wrong-code")))
+                .willThrow(new AlbumInviteNotFoundException());
+
+        // when & then
+        mockMvc.perform(post("/api/albums/join")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"inviteCode\":\"wrong-code\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("ALBUM_INVITE_NOT_FOUND"));
     }
 }

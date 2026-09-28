@@ -6,6 +6,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 
 import com.back.facepick.album.application.dto.result.AlbumDetailResult;
+import com.back.facepick.album.application.dto.result.AlbumInviteResult;
 import com.back.facepick.album.application.dto.result.AlbumResult;
 import com.back.facepick.album.domain.Album;
 import com.back.facepick.album.domain.AlbumMemberRepository;
@@ -89,5 +90,38 @@ class AlbumQueryServiceTest {
         assertThat(results)
                 .containsExactly(
                         new AlbumResult(10L, "제주 여행", AlbumRole.OWNER, album.getExpiresAt(), AlbumFixture.NOW));
+    }
+
+    @Nested
+    @DisplayName("초대 코드 조회")
+    class GetAlbumInvite {
+
+        @Test
+        @DisplayName("참여자는 초대 코드를 조회한다")
+        void returnsCodeToMember() {
+            // given
+            Album album = AlbumFixture.album(10L, 1L);
+            given(albumRepository.getById(10L)).willReturn(album);
+            given(albumMemberRepository.getByAlbumIdAndUserId(10L, 2L))
+                    .willReturn(AlbumFixture.member(album, 2L, AlbumRole.MEMBER));
+
+            // when
+            AlbumInviteResult result = albumQueryService.getAlbumInvite(2L, 10L);
+
+            // then
+            assertThat(result).isEqualTo(new AlbumInviteResult(AlbumFixture.INVITE_CODE));
+        }
+
+        @Test
+        @DisplayName("참여자가 아니면 AlbumNotMemberException")
+        void throwsWhenNotMember() {
+            // given
+            given(albumRepository.getById(10L)).willReturn(AlbumFixture.album(10L, 1L));
+            given(albumMemberRepository.getByAlbumIdAndUserId(10L, 3L)).willThrow(new AlbumNotMemberException());
+
+            // when & then
+            assertThatThrownBy(() -> albumQueryService.getAlbumInvite(3L, 10L))
+                    .isInstanceOf(AlbumNotMemberException.class);
+        }
     }
 }
