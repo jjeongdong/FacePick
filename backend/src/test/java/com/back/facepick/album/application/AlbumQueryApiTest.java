@@ -3,7 +3,10 @@ package com.back.facepick.album.application;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 
+import com.back.facepick.album.application.dto.api.AlbumInfo;
 import com.back.facepick.album.domain.AlbumMemberRepository;
+import com.back.facepick.album.domain.AlbumRepository;
+import com.back.facepick.album.fixture.AlbumFixture;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,6 +19,9 @@ class AlbumQueryApiTest {
 
     @Mock
     private AlbumMemberRepository albumMemberRepository;
+
+    @Mock
+    private AlbumRepository albumRepository;
 
     @InjectMocks
     private AlbumQueryApi albumQueryApi;
@@ -38,5 +44,18 @@ class AlbumQueryApiTest {
 
         // when & then
         assertThat(albumQueryApi.isMember(10L, 2L)).isFalse();
+    }
+
+    @Test
+    @DisplayName("앨범 ID 와 만료 시각을 조회한다")
+    void getInfo() {
+        // given
+        given(albumRepository.getById(10L)).willReturn(AlbumFixture.album(10L, 1L));
+
+        // when
+        AlbumInfo info = albumQueryApi.getInfo(10L);
+
+        // then
+        assertThat(info).isEqualTo(new AlbumInfo(10L, AlbumFixture.NOW.plusDays(30)));
     }
 }
