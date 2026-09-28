@@ -8,6 +8,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -97,6 +98,22 @@ class S3PhotoStorageTest {
     void exposesExpiry() {
         // when & then
         assertThat(storage.uploadUrlExpiry()).isEqualTo(Duration.ofMinutes(15));
+    }
+
+    @Test
+    @DisplayName("여러 파일을 지우고, 없는 키가 섞여도 성공한다")
+    void deletesObjects() throws Exception {
+        // given
+        put(storage.createUploadUrl("albums/1/originals/del", "image/jpeg"), "image/jpeg", new byte[] {1});
+        put(storage.createUploadUrl("albums/1/thumbnails/del.jpg", "image/jpeg"), "image/jpeg", new byte[] {2});
+
+        // when
+        storage.deleteObjects(
+                List.of("albums/1/originals/del", "albums/1/thumbnails/del.jpg", "albums/1/previews/del.jpg"));
+
+        // then
+        assertThat(storage.findObjectSize("albums/1/originals/del")).isEmpty();
+        assertThat(storage.findObjectSize("albums/1/thumbnails/del.jpg")).isEmpty();
     }
 
     private static HttpResponse<String> put(URL url, String contentType, byte[] body) throws Exception {
