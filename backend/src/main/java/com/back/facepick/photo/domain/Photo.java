@@ -15,7 +15,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
-import java.util.Set;
+import java.util.Map;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -27,9 +27,14 @@ import lombok.NoArgsConstructor;
 public class Photo extends BaseTimeEntity {
     // 단일 PUT 업로드라 한 파일이 너무 크면 끊겼을 때 처음부터 다시 올려야 한다. DNG 를 고려한 상한.
     private static final long MAX_BYTE_SIZE = 100L * 1024 * 1024;
-    // PRD F5: 원본 그대로 보관하는 형식. 라이브 포토 영상(MOV)은 아직 다루지 않는다.
-    private static final Set<String> SUPPORTED_CONTENT_TYPES =
-            Set.of("image/jpeg", "image/png", "image/heic", "image/heif", "image/x-adobe-dng");
+    // PRD F5: 원본 그대로 보관하는 형식과 다운로드 파일 확장자. 라이브 포토 영상(MOV)은 아직 다루지 않는다.
+    private static final Map<String, String> EXTENSIONS_BY_CONTENT_TYPE = Map.of(
+            "image/jpeg", "jpg",
+            "image/png", "png",
+            "image/heic", "heic",
+            "image/heif", "heif",
+            "image/x-adobe-dng", "dng");
+    private static final String DOWNLOAD_FILE_PREFIX = "facepick-";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -61,6 +66,26 @@ public class Photo extends BaseTimeEntity {
     @Column(name = "uploaded_at")
     private LocalDateTime uploadedAt;
 
+    // 아래는 썸네일 워커(Python)만 쓰는 컬럼이다. JPA 는 UPDATE 때 모든 컬럼을 쓰므로,
+    // 백엔드가 사진을 고칠 때 워커가 쓴 값을 옛 값으로 덮지 않게 읽기 전용으로 둔다.
+    @Column(name = "thumbnail_key", insertable = false, updatable = false)
+    private String thumbnailKey;
+
+    @Column(name = "preview_key", insertable = false, updatable = false)
+    private String previewKey;
+
+    @Column(insertable = false, updatable = false)
+    private Integer width;
+
+    @Column(insertable = false, updatable = false)
+    private Integer height;
+
+    @Column(name = "taken_at", insertable = false, updatable = false)
+    private LocalDateTime takenAt;
+
+    @Column(name = "processed_at", insertable = false, updatable = false)
+    private LocalDateTime processedAt;
+
     private Photo(
             Long albumId, Long uploaderId, String contentHash, Long byteSize, String contentType, String storageKey) {
         this.albumId = albumId;
@@ -81,7 +106,7 @@ public class Photo extends BaseTimeEntity {
 
     // 이미 등록된 해시를 다시 요청할 때도 선언 값을 검사해야 해서 create 와 따로 둔다.
     public static void validateFile(String contentType, Long byteSize) {
-        if (!SUPPORTED_CONTENT_TYPES.contains(contentType)) {
+        if (!EXTENSIONS_BY_CONTENT_TYPE.containsKey(contentType)) {
             throw new PhotoUnsupportedTypeException();
         }
         if (byteSize > MAX_BYTE_SIZE) {
@@ -91,6 +116,16 @@ public class Photo extends BaseTimeEntity {
 
     public boolean isUploaded() {
         return status == PhotoStatus.UPLOADED;
+    }
+
+    // 워커 처리 전(또는 DLQ 로 간) 사진은 썸네일·미리보기가 없다.
+    public boolean isProcessed() {
+        return processedAt != null;
+    }
+
+    // 저장 키에 확장자가 없고 원래 파일명은 받지 않아, 사진 ID 와 형식으로 이름을 만든다.
+    public String downloadFileName() {
+        return DOWNLOAD_FILE_PREFIX + id + "." + EXTENSIONS_BY_CONTENT_TYPE.get(contentType);
     }
 
     // 먼저 시작한 사람이 업로드를 그만둬도 같은 파일을 다시 요청한 사람이 끝낼 수 있게 한다.
