@@ -155,12 +155,12 @@ class PhotoRepositoryImplQueryTest {
         // given
         Photo photo = Photo.create(1L, 1L, hash(1), 1000L, "image/jpeg");
         photoRepository.saveAll(List.of(photo));
-        entityManager.flush();
+        flushAndClear();
+        // 워커 값이 없을 때 읽어 둔 엔티티를, 워커가 쓴 뒤에 고치는 순서를 재현한다.
+        Photo loaded = photoRepository.getById(photo.getId());
         writeWorkerColumns(photo.getId());
-        entityManager.clear();
 
         // when
-        Photo loaded = photoRepository.getById(photo.getId());
         loaded.reassignUploader(2L);
         flushAndClear();
 
