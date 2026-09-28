@@ -24,3 +24,9 @@ storage:
 
 album:
   retention-days: 30
+
+jwt:
+  # 운영에서는 환경 변수로 32바이트 이상 값을 넣는다. 비어 있으면 앱이 뜨지 않는다.
+  secret-key: ${JWT_SECRET_KEY:}
+  access-expiration-millis: 3600000
+  refresh-expiration-millis: 2592000000
