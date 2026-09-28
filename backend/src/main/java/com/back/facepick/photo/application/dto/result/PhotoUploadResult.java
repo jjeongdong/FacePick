@@ -11,14 +11,16 @@ public record PhotoUploadResult(LocalDateTime expiresAt, List<FileResult> files)
         ALREADY_UPLOADED
     }
 
-    public record FileResult(String contentHash, Long photoId, Status status, String uploadUrl) {
+    public record FileResult(String contentHash, Long photoId, Status status, String contentType, String uploadUrl) {
 
         public static FileResult uploadRequired(Photo photo, String uploadUrl) {
-            return new FileResult(photo.getContentHash(), photo.getId(), Status.UPLOAD_REQUIRED, uploadUrl);
+            return new FileResult(
+                    photo.getContentHash(), photo.getId(), Status.UPLOAD_REQUIRED, photo.getContentType(), uploadUrl);
         }
 
         public static FileResult alreadyUploaded(Photo photo) {
-            return new FileResult(photo.getContentHash(), photo.getId(), Status.ALREADY_UPLOADED, null);
+            return new FileResult(
+                    photo.getContentHash(), photo.getId(), Status.ALREADY_UPLOADED, photo.getContentType(), null);
         }
     }
 }

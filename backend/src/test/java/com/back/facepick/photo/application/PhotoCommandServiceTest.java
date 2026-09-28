@@ -92,7 +92,8 @@ class PhotoCommandServiceTest {
 
             // then
             assertThat(result.files())
-                    .containsExactly(new FileResult(HASH_A, 100L, Status.UPLOAD_REQUIRED, uploadUrl(HASH_A)));
+                    .containsExactly(
+                            new FileResult(HASH_A, 100L, Status.UPLOAD_REQUIRED, "image/jpeg", uploadUrl(HASH_A)));
             then(photoRepository)
                     .should()
                     .saveAll(argThat(photos ->
@@ -113,7 +114,8 @@ class PhotoCommandServiceTest {
             PhotoUploadResult result = photoCommandService.createPhotoUploads(1L, ALBUM_ID, command(file(HASH_A)));
 
             // then
-            assertThat(result.files()).containsExactly(new FileResult(HASH_A, 7L, Status.ALREADY_UPLOADED, null));
+            assertThat(result.files())
+                    .containsExactly(new FileResult(HASH_A, 7L, Status.ALREADY_UPLOADED, "image/jpeg", null));
             then(photoStorage).should(never()).createUploadUrl(any(), any());
         }
 
@@ -133,8 +135,43 @@ class PhotoCommandServiceTest {
 
             // then
             assertThat(result.files())
-                    .containsExactly(new FileResult(HASH_A, 7L, Status.UPLOAD_REQUIRED, uploadUrl(HASH_A)));
+                    .containsExactly(
+                            new FileResult(HASH_A, 7L, Status.UPLOAD_REQUIRED, "image/jpeg", uploadUrl(HASH_A)));
             assertThat(pending.getUploaderId()).isEqualTo(1L);
+        }
+
+        @Test
+        @DisplayName("PENDING 재발급 - 다른 형식으로 선언해도 처음 등록된 형식으로 서명하고 그 형식을 알려준다")
+        void signsWithRegisteredContentType() throws Exception {
+            // given
+            givenMemberOfOpenAlbum(1L);
+            given(photoRepository.findAllByAlbumIdAndContentHashes(ALBUM_ID, List.of(HASH_A)))
+                    .willReturn(List.of(PhotoFixture.pending(7L, ALBUM_ID, 2L, HASH_A)));
+            givenUploadUrls();
+
+            // when
+            PhotoUploadResult result = photoCommandService.createPhotoUploads(
+                    1L, ALBUM_ID, command(new UploadFile(HASH_A, PhotoFixture.BYTE_SIZE, "image/png")));
+
+            // then
+            assertThat(result.files())
+                    .containsExactly(
+                            new FileResult(HASH_A, 7L, Status.UPLOAD_REQUIRED, "image/jpeg", uploadUrl(HASH_A)));
+        }
+
+        @Test
+        @DisplayName("이미 있는 해시라도 선언이 규칙에 어긋나면 요청 전체를 거절한다")
+        void validatesDeclaredValuesOfExistingFiles() {
+            // given
+            givenMemberOfOpenAlbum(1L);
+            given(photoRepository.findAllByAlbumIdAndContentHashes(ALBUM_ID, List.of(HASH_A)))
+                    .willReturn(List.of(PhotoFixture.uploaded(7L, ALBUM_ID, 2L, HASH_A)));
+
+            // when & then
+            assertThatThrownBy(() -> photoCommandService.createPhotoUploads(
+                            1L, ALBUM_ID, command(new UploadFile(HASH_A, PhotoFixture.BYTE_SIZE, "image/gif"))))
+                    .isInstanceOf(PhotoUnsupportedTypeException.class);
+            then(photoRepository).should(never()).saveAll(anyList());
         }
 
         @Test

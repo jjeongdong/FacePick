@@ -110,11 +110,24 @@ class PhotoTest {
         }
 
         @Test
-        @DisplayName("업로더가 아니면 이미 UPLOADED 여도 PhotoNotUploaderException")
-        void throwsWhenNotUploader() {
+        @DisplayName("이미 UPLOADED 면 업로더가 아니어도 예외 없이 false (재시도 안전)")
+        void returnsFalseForAnyoneWhenAlreadyUploaded() {
             // given
             Photo photo = Photo.create(10L, 1L, HASH, 1000L, "image/jpeg");
             photo.complete(1L, 1000L, NOW);
+
+            // when
+            boolean completed = photo.complete(2L, 1000L, NOW);
+
+            // then
+            assertThat(completed).isFalse();
+        }
+
+        @Test
+        @DisplayName("PENDING 인데 업로더가 아니면 PhotoNotUploaderException")
+        void throwsWhenNotUploader() {
+            // given
+            Photo photo = Photo.create(10L, 1L, HASH, 1000L, "image/jpeg");
 
             // when & then
             assertThatThrownBy(() -> photo.complete(2L, 1000L, NOW)).isInstanceOf(PhotoNotUploaderException.class);

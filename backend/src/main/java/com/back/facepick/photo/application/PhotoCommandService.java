@@ -45,6 +45,7 @@ public class PhotoCommandService {
         }
         List<Photo> newPhotos = new ArrayList<>();
         for (PhotoUploadCommand.UploadFile file : command.files()) {
+            Photo.validateFile(file.contentType(), file.byteSize());
             Photo photo = photosByHash.get(file.contentHash());
             if (photo == null) {
                 Photo created = Photo.create(albumId, userId, file.contentHash(), file.byteSize(), file.contentType());

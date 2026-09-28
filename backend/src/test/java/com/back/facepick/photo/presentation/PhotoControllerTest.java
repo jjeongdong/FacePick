@@ -67,7 +67,8 @@ class PhotoControllerTest {
         given(photoCommandService.createPhotoUploads(1L, 10L, command))
                 .willReturn(new PhotoUploadResult(
                         NOW.plusMinutes(15),
-                        List.of(new FileResult(HASH, 12L, Status.UPLOAD_REQUIRED, "http://storage/upload"))));
+                        List.of(new FileResult(
+                                HASH, 12L, Status.UPLOAD_REQUIRED, "image/jpeg", "http://storage/upload"))));
 
         // when & then
         mockMvc.perform(post("/api/albums/10/photos/uploads")
@@ -76,6 +77,7 @@ class PhotoControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.files[0].photoId").value(12))
                 .andExpect(jsonPath("$.files[0].status").value("UPLOAD_REQUIRED"))
+                .andExpect(jsonPath("$.files[0].contentType").value("image/jpeg"))
                 .andExpect(jsonPath("$.files[0].uploadUrl").value("http://storage/upload"));
     }
 

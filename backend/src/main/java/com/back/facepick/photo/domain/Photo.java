@@ -73,15 +73,20 @@ public class Photo extends BaseTimeEntity {
     }
 
     public static Photo create(Long albumId, Long uploaderId, String contentHash, Long byteSize, String contentType) {
+        validateFile(contentType, byteSize);
+        // 해시는 앨범 안에서 유일하므로 저장 전에 키를 정할 수 있다.
+        String storageKey = "albums/" + albumId + "/originals/" + contentHash;
+        return new Photo(albumId, uploaderId, contentHash, byteSize, contentType, storageKey);
+    }
+
+    // 이미 등록된 해시를 다시 요청할 때도 선언 값을 검사해야 해서 create 와 따로 둔다.
+    public static void validateFile(String contentType, Long byteSize) {
         if (!SUPPORTED_CONTENT_TYPES.contains(contentType)) {
             throw new PhotoUnsupportedTypeException();
         }
         if (byteSize > MAX_BYTE_SIZE) {
             throw new PhotoTooLargeException();
         }
-        // 해시는 앨범 안에서 유일하므로 저장 전에 키를 정할 수 있다.
-        String storageKey = "albums/" + albumId + "/originals/" + contentHash;
-        return new Photo(albumId, uploaderId, contentHash, byteSize, contentType, storageKey);
     }
 
     public boolean isUploaded() {
@@ -98,11 +103,12 @@ public class Photo extends BaseTimeEntity {
      * @return 이번 호출로 UPLOADED 가 됐으면 true, 이미 UPLOADED 였으면 false
      */
     public boolean complete(Long userId, Long storedByteSize, LocalDateTime now) {
-        if (!uploaderId.equals(userId)) {
-            throw new PhotoNotUploaderException();
-        }
+        // 업로더가 바뀐 뒤 원래 업로더가 재시도해도 403 이 되지 않게, 이미 끝난 사진은 누구에게나 멱등하게 답한다.
         if (isUploaded()) {
             return false;
+        }
+        if (!uploaderId.equals(userId)) {
+            throw new PhotoNotUploaderException();
         }
         if (storedByteSize == null) {
             throw new PhotoFileMissingException();
