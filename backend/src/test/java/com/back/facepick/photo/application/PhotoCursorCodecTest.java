@@ -47,6 +47,15 @@ class PhotoCursorCodecTest {
         assertThatThrownBy(() -> PhotoCursorCodec.decode(cursor)).isInstanceOf(InvalidInputException.class);
     }
 
+    // "+999999999-12-31T23:59:59_1", "-000001-01-01T00:00_1" — Java 는 읽지만 DB 타임스탬프 범위를 넘는다.
+    @ParameterizedTest
+    @ValueSource(strings = {"Kzk5OTk5OTk5OS0xMi0zMVQyMzo1OTo1OV8x", "LTAwMDAwMS0wMS0wMVQwMDowMF8x"})
+    @DisplayName("연도가 1~9999 밖이면 InvalidInputException")
+    void rejectsOutOfRangeYear(String cursor) {
+        // when & then
+        assertThatThrownBy(() -> PhotoCursorCodec.decode(cursor)).isInstanceOf(InvalidInputException.class);
+    }
+
     @Test
     @DisplayName("구분자 뒤가 비어 있으면 InvalidInputException")
     void rejectsMissingPhotoId() {
