@@ -47,7 +47,7 @@ class AlbumQueryApiTest {
     }
 
     @Test
-    @DisplayName("앨범 ID 와 만료 시각을 조회한다")
+    @DisplayName("앨범 ID·앨범장 ID·만료 시각을 조회한다")
     void getInfo() {
         // given
         given(albumRepository.getById(10L)).willReturn(AlbumFixture.album(10L, 1L));
@@ -56,6 +56,6 @@ class AlbumQueryApiTest {
         AlbumInfo info = albumQueryApi.getInfo(10L);
 
         // then
-        assertThat(info).isEqualTo(new AlbumInfo(10L, AlbumFixture.NOW.plusDays(30)));
+        assertThat(info).isEqualTo(new AlbumInfo(10L, 1L, AlbumFixture.NOW.plusDays(30)));
     }
 }

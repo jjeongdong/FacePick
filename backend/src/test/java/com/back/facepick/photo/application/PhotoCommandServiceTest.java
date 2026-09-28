@@ -200,7 +200,7 @@ class PhotoCommandServiceTest {
         void throwsWhenNotMember() {
             // given
             given(albumQueryApi.getInfo(ALBUM_ID))
-                    .willReturn(new AlbumInfo(ALBUM_ID, LocalDateTime.now().plusDays(1)));
+                    .willReturn(new AlbumInfo(ALBUM_ID, 99L, LocalDateTime.now().plusDays(1)));
             given(albumQueryApi.isMember(ALBUM_ID, 3L)).willReturn(false);
 
             // when & then
@@ -214,7 +214,7 @@ class PhotoCommandServiceTest {
         void throwsWhenAlbumExpired() {
             // given
             given(albumQueryApi.getInfo(ALBUM_ID))
-                    .willReturn(new AlbumInfo(ALBUM_ID, LocalDateTime.now().minusDays(1)));
+                    .willReturn(new AlbumInfo(ALBUM_ID, 99L, LocalDateTime.now().minusDays(1)));
             given(albumQueryApi.isMember(ALBUM_ID, 1L)).willReturn(true);
 
             // when & then
@@ -302,7 +302,7 @@ class PhotoCommandServiceTest {
 
     private void givenMemberOfOpenAlbum(Long userId) {
         given(albumQueryApi.getInfo(ALBUM_ID))
-                .willReturn(new AlbumInfo(ALBUM_ID, LocalDateTime.now().plusDays(1)));
+                .willReturn(new AlbumInfo(ALBUM_ID, 99L, LocalDateTime.now().plusDays(1)));
         given(albumQueryApi.isMember(ALBUM_ID, userId)).willReturn(true);
     }
 

@@ -157,7 +157,7 @@ class PhotoQueryServiceTest {
         @DisplayName("참여자가 아니면 PhotoViewNotAlbumMemberException, 사진을 조회하지 않는다")
         void rejectsNonMember() {
             // given
-            given(albumQueryApi.getInfo(ALBUM_ID)).willReturn(new AlbumInfo(ALBUM_ID, FAR_FUTURE));
+            given(albumQueryApi.getInfo(ALBUM_ID)).willReturn(new AlbumInfo(ALBUM_ID, 99L, FAR_FUTURE));
             given(albumQueryApi.isMember(ALBUM_ID, USER_ID)).willReturn(false);
 
             // when & then
@@ -170,7 +170,7 @@ class PhotoQueryServiceTest {
         @DisplayName("만료된 앨범이면 PhotoViewAlbumExpiredException")
         void rejectsExpiredAlbum() {
             // given
-            given(albumQueryApi.getInfo(ALBUM_ID)).willReturn(new AlbumInfo(ALBUM_ID, PAST));
+            given(albumQueryApi.getInfo(ALBUM_ID)).willReturn(new AlbumInfo(ALBUM_ID, 99L, PAST));
             given(albumQueryApi.isMember(ALBUM_ID, USER_ID)).willReturn(true);
 
             // when & then
@@ -233,7 +233,7 @@ class PhotoQueryServiceTest {
             Long otherAlbumId = 99L;
             given(photoRepository.getUploadedById(12L))
                     .willReturn(PhotoFixture.processed(12L, otherAlbumId, 2L, hash(1)));
-            given(albumQueryApi.getInfo(otherAlbumId)).willReturn(new AlbumInfo(otherAlbumId, FAR_FUTURE));
+            given(albumQueryApi.getInfo(otherAlbumId)).willReturn(new AlbumInfo(otherAlbumId, 99L, FAR_FUTURE));
             given(albumQueryApi.isMember(otherAlbumId, USER_ID)).willReturn(false);
 
             // when & then
@@ -244,7 +244,7 @@ class PhotoQueryServiceTest {
     }
 
     private void allowView(Long albumId) {
-        given(albumQueryApi.getInfo(albumId)).willReturn(new AlbumInfo(albumId, FAR_FUTURE));
+        given(albumQueryApi.getInfo(albumId)).willReturn(new AlbumInfo(albumId, 99L, FAR_FUTURE));
         given(albumQueryApi.isMember(albumId, USER_ID)).willReturn(true);
     }
 

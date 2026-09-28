@@ -17,7 +17,7 @@ public class AlbumQueryApi {
      * 앨범의 공개 정보를 조회한다.
      *
      * @param albumId 앨범 ID
-     * @return 앨범 ID·만료 시각
+     * @return 앨범 ID·앨범장 ID·만료 시각
      * @throws com.back.facepick.album.domain.exception.AlbumNotFoundException 없는 앨범이면 (404)
      */
     @Transactional(readOnly = true)
