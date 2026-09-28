@@ -13,6 +13,9 @@ public enum PhotoErrorCode implements ErrorCode {
     PHOTO_FILE_MISSING(ErrorType.CONFLICT, "스토리지에 파일이 아직 올라가지 않았습니다."),
     PHOTO_VIEW_NOT_ALBUM_MEMBER(ErrorType.FORBIDDEN, "앨범 참여자만 사진을 볼 수 있습니다."),
     PHOTO_VIEW_ALBUM_EXPIRED(ErrorType.INVALID, "만료된 앨범의 사진은 볼 수 없습니다."),
+    PHOTO_DELETE_NOT_ALBUM_MEMBER(ErrorType.FORBIDDEN, "앨범 참여자만 사진을 삭제할 수 있습니다."),
+    PHOTO_DELETE_ALBUM_EXPIRED(ErrorType.INVALID, "만료된 앨범의 사진은 삭제할 수 없습니다."),
+    PHOTO_NOT_DELETABLE(ErrorType.FORBIDDEN, "직접 올린 사진만 삭제할 수 있습니다. 앨범장은 모든 사진을 삭제할 수 있습니다."),
     PHOTO_SIZE_MISMATCH(ErrorType.CONFLICT, "올라간 파일 크기가 요청한 크기와 다릅니다.");
 
     private final ErrorType type;
