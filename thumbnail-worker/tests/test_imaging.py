@@ -92,6 +92,15 @@ def test_output_has_no_exif():
     assert len(opened(result.thumbnail).getexif()) == 0
 
 
+def test_output_has_no_jpeg_comment():
+    original = encode(Image.new("RGB", (800, 600), "red"), comment=b"secret-comment GPS 37.55")
+
+    result = render(original)
+
+    assert "comment" not in opened(result.preview).info
+    assert "comment" not in opened(result.thumbnail).info
+
+
 def test_icc_profile_is_kept():
     icc = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
     original = encode(Image.new("RGB", (800, 600), "red"), icc_profile=icc)

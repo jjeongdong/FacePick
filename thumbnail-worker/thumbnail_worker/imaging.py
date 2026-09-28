@@ -77,7 +77,9 @@ def _shrunk(image: Image.Image, max_side: int) -> Image.Image:
 
 def _jpeg(image: Image.Image, icc_profile: bytes | None) -> bytes:
     buffer = BytesIO()
-    # exif 인자를 주지 않아 GPS 등 메타데이터가 공유용 파일에 실리지 않는다.
+    # 공유용 파일에 메타데이터를 싣지 않는다. exif 인자를 주지 않고, 원본에서 따라온 info 도 비운다
+    # (Pillow 는 인자가 없으면 info 의 comment·xmp 를 그대로 다시 쓴다).
+    image.info = {}
     image.save(buffer, "JPEG", quality=JPEG_QUALITY, icc_profile=icc_profile)
     return buffer.getvalue()
 
