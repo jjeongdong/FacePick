@@ -17,6 +17,12 @@ spring:
       hibernate:
         default_batch_fetch_size: 500
 
+  kafka:
+    producer:
+      properties:
+        # 브로커가 죽었을 때 send() 가 메타데이터를 기다리며 Relay 트랜잭션을 오래 붙잡지 않게 한다 (기본 60초).
+        max.block.ms: 5000
+
 storage:
   region: us-east-1
   bucket: photos

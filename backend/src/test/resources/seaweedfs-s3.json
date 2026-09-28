@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "facepick",
+      "credentials": [{ "accessKey": "facepick", "secretKey": "facepick-secret" }],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}
