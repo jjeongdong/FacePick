@@ -13,9 +13,11 @@ import static org.mockito.Mockito.never;
 
 import com.back.facepick.album.application.AlbumQueryApi;
 import com.back.facepick.album.application.dto.api.AlbumInfo;
+import com.back.facepick.photo.application.dto.command.PhotoDeleteCommand;
 import com.back.facepick.photo.application.dto.command.PhotoUploadCommand;
 import com.back.facepick.photo.application.dto.command.PhotoUploadCommand.UploadFile;
 import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
+import com.back.facepick.photo.application.dto.result.PhotoDeleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.FileResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.Status;
@@ -25,9 +27,14 @@ import com.back.facepick.photo.domain.PhotoOutboxRepository;
 import com.back.facepick.photo.domain.PhotoRepository;
 import com.back.facepick.photo.domain.PhotoStatus;
 import com.back.facepick.photo.domain.PhotoStorage;
+import com.back.facepick.photo.domain.PhotoStorageDeletion;
+import com.back.facepick.photo.domain.PhotoStorageDeletionRepository;
 import com.back.facepick.photo.domain.exception.PhotoAlbumExpiredException;
+import com.back.facepick.photo.domain.exception.PhotoDeleteAlbumExpiredException;
+import com.back.facepick.photo.domain.exception.PhotoDeleteNotAlbumMemberException;
 import com.back.facepick.photo.domain.exception.PhotoFileMissingException;
 import com.back.facepick.photo.domain.exception.PhotoNotAlbumMemberException;
+import com.back.facepick.photo.domain.exception.PhotoNotDeletableException;
 import com.back.facepick.photo.domain.exception.PhotoUnsupportedTypeException;
 import com.back.facepick.photo.fixture.PhotoFixture;
 import java.net.URI;
@@ -66,6 +73,9 @@ class PhotoCommandServiceTest {
 
     @Mock
     private PhotoOutboxRepository photoOutboxRepository;
+
+    @Mock
+    private PhotoStorageDeletionRepository photoStorageDeletionRepository;
 
     @Spy
     private JsonMapper jsonMapper = JsonMapper.builder().build();
@@ -297,6 +307,142 @@ class PhotoCommandServiceTest {
             assertThatThrownBy(() -> photoCommandService.completePhoto(1L, 12L))
                     .isInstanceOf(PhotoFileMissingException.class);
             then(photoOutboxRepository).should(never()).save(any(PhotoOutbox.class));
+        }
+    }
+
+    @Nested
+    @DisplayName("사진 삭제")
+    class DeletePhotos {
+
+        private static final Long OWNER_ID = 99L;
+
+        @Test
+        @SuppressWarnings("unchecked")
+        @DisplayName("자기 사진을 지우고 파일 삭제 대기열에 원본 키를 남긴다")
+        void deletesOwnPhotos() {
+            // given
+            givenAlbum(1L, true, LocalDateTime.now().plusDays(1));
+            Photo first = PhotoFixture.uploaded(13L, ALBUM_ID, 1L, HASH_B);
+            Photo second = PhotoFixture.pending(12L, ALBUM_ID, 1L, HASH_A);
+            given(photoRepository.findAllByAlbumIdAndIds(ALBUM_ID, List.of(13L, 12L)))
+                    .willReturn(List.of(first, second));
+
+            // when
+            PhotoDeleteResult result =
+                    photoCommandService.deletePhotos(1L, ALBUM_ID, new PhotoDeleteCommand(List.of(13L, 12L)));
+
+            // then
+            assertThat(result.deletedPhotoIds()).containsExactly(12L, 13L);
+            then(photoRepository).should().deleteAll(List.of(first, second));
+            ArgumentCaptor<List<PhotoStorageDeletion>> captor = ArgumentCaptor.forClass(List.class);
+            then(photoStorageDeletionRepository).should().saveAll(captor.capture());
+            assertThat(captor.getValue())
+                    .extracting(PhotoStorageDeletion::getStorageKey)
+                    .containsExactly(first.getStorageKey(), second.getStorageKey());
+        }
+
+        @Test
+        @DisplayName("이 앨범에 없는 ID 는 건너뛰고 실제로 지운 ID 만 준다")
+        void skipsMissingIds() {
+            // given
+            givenAlbum(1L, true, LocalDateTime.now().plusDays(1));
+            Photo photo = PhotoFixture.uploaded(12L, ALBUM_ID, 1L, HASH_A);
+            given(photoRepository.findAllByAlbumIdAndIds(ALBUM_ID, List.of(12L, 999L)))
+                    .willReturn(List.of(photo));
+
+            // when
+            PhotoDeleteResult result =
+                    photoCommandService.deletePhotos(1L, ALBUM_ID, new PhotoDeleteCommand(List.of(12L, 999L)));
+
+            // then
+            assertThat(result.deletedPhotoIds()).containsExactly(12L);
+        }
+
+        @Test
+        @DisplayName("중복 ID 는 한 번만 조회한다")
+        void deduplicatesIds() {
+            // given
+            givenAlbum(1L, true, LocalDateTime.now().plusDays(1));
+            given(photoRepository.findAllByAlbumIdAndIds(ALBUM_ID, List.of(12L)))
+                    .willReturn(List.of(PhotoFixture.uploaded(12L, ALBUM_ID, 1L, HASH_A)));
+
+            // when
+            PhotoDeleteResult result =
+                    photoCommandService.deletePhotos(1L, ALBUM_ID, new PhotoDeleteCommand(List.of(12L, 12L)));
+
+            // then
+            assertThat(result.deletedPhotoIds()).containsExactly(12L);
+        }
+
+        @Test
+        @DisplayName("앨범장은 남이 올린 사진도 지운다")
+        void ownerDeletesOthersPhoto() {
+            // given
+            givenAlbum(OWNER_ID, true, LocalDateTime.now().plusDays(1));
+            Photo photo = PhotoFixture.uploaded(12L, ALBUM_ID, 1L, HASH_A);
+            given(photoRepository.findAllByAlbumIdAndIds(ALBUM_ID, List.of(12L)))
+                    .willReturn(List.of(photo));
+
+            // when
+            PhotoDeleteResult result =
+                    photoCommandService.deletePhotos(OWNER_ID, ALBUM_ID, new PhotoDeleteCommand(List.of(12L)));
+
+            // then
+            assertThat(result.deletedPhotoIds()).containsExactly(12L);
+            then(photoRepository).should().deleteAll(List.of(photo));
+        }
+
+        @Test
+        @DisplayName("남의 사진이 섞이면 PhotoNotDeletableException 이고 아무것도 지우지 않는다")
+        void rejectsAllWhenAnyIsNotDeletable() {
+            // given
+            givenAlbum(1L, true, LocalDateTime.now().plusDays(1));
+            given(photoRepository.findAllByAlbumIdAndIds(ALBUM_ID, List.of(12L, 13L)))
+                    .willReturn(List.of(
+                            PhotoFixture.uploaded(12L, ALBUM_ID, 1L, HASH_A),
+                            PhotoFixture.uploaded(13L, ALBUM_ID, 2L, HASH_B)));
+
+            // when & then
+            assertThatThrownBy(() ->
+                            photoCommandService.deletePhotos(1L, ALBUM_ID, new PhotoDeleteCommand(List.of(12L, 13L))))
+                    .isInstanceOf(PhotoNotDeletableException.class);
+            then(photoRepository).should(never()).deleteAll(anyList());
+            then(photoStorageDeletionRepository).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("참여자가 아니면 PhotoDeleteNotAlbumMemberException")
+        void rejectsNonMember() {
+            // given
+            givenAlbum(3L, false, LocalDateTime.now().plusDays(1));
+            given(photoRepository.findAllByAlbumIdAndIds(ALBUM_ID, List.of(12L)))
+                    .willReturn(List.of());
+
+            // when & then
+            assertThatThrownBy(
+                            () -> photoCommandService.deletePhotos(3L, ALBUM_ID, new PhotoDeleteCommand(List.of(12L))))
+                    .isInstanceOf(PhotoDeleteNotAlbumMemberException.class);
+            then(photoRepository).should(never()).deleteAll(anyList());
+        }
+
+        @Test
+        @DisplayName("만료된 앨범이면 PhotoDeleteAlbumExpiredException")
+        void rejectsExpiredAlbum() {
+            // given
+            givenAlbum(1L, true, LocalDateTime.now().minusDays(1));
+            given(photoRepository.findAllByAlbumIdAndIds(ALBUM_ID, List.of(12L)))
+                    .willReturn(List.of(PhotoFixture.uploaded(12L, ALBUM_ID, 1L, HASH_A)));
+
+            // when & then
+            assertThatThrownBy(
+                            () -> photoCommandService.deletePhotos(1L, ALBUM_ID, new PhotoDeleteCommand(List.of(12L))))
+                    .isInstanceOf(PhotoDeleteAlbumExpiredException.class);
+            then(photoRepository).should(never()).deleteAll(anyList());
+        }
+
+        private void givenAlbum(Long userId, boolean member, LocalDateTime expiresAt) {
+            given(albumQueryApi.getInfo(ALBUM_ID)).willReturn(new AlbumInfo(ALBUM_ID, OWNER_ID, expiresAt));
+            given(albumQueryApi.isMember(ALBUM_ID, userId)).willReturn(member);
         }
     }
 
