@@ -38,3 +38,14 @@ jwt:
   secret-key: ${JWT_SECRET_KEY:}
   access-expiration-millis: 3600000
   refresh-expiration-millis: 2592000000
+
+facepick:
+  pipeline:
+    # 업로드 완료 뒤 사진 처리를 넘기는 방식. event: outbox → Kafka / sync: 완료 요청 안에서 워커를 HTTP 로 호출 (비교 측정용)
+    mode: event
+    thumbnail-url: http://localhost:8091
+    # 측정 때는 워커 노트북 IP 로 바꿔 띄운다 (--facepick.pipeline.face-url=...)
+    face-url: http://localhost:8092
+    connect-timeout-millis: 2000
+    thumbnail-read-timeout-millis: 30000
+    face-read-timeout-millis: 60000

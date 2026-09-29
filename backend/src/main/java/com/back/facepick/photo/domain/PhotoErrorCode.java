@@ -19,7 +19,9 @@ public enum PhotoErrorCode implements ErrorCode {
     PHOTO_SIZE_MISMATCH(ErrorType.CONFLICT, "올라간 파일 크기가 요청한 크기와 다릅니다."),
     PHOTO_SELFIE_CONSENT_REQUIRED(ErrorType.INVALID, "얼굴 분석에 동의해야 내 사진을 등록할 수 있습니다."),
     PHOTO_SELFIE_TOO_LARGE(ErrorType.INVALID, "내 사진은 20MB 이하여야 합니다."),
-    PHOTO_SELFIE_NOT_READY(ErrorType.CONFLICT, "내 사진 등록이 끝나야 내가 나온 사진을 볼 수 있습니다.");
+    PHOTO_SELFIE_NOT_READY(ErrorType.CONFLICT, "내 사진 등록이 끝나야 내가 나온 사진을 볼 수 있습니다."),
+    PHOTO_PROCESSING_UNAVAILABLE(ErrorType.EXTERNAL, "사진 처리 서버에 연결할 수 없습니다. 잠시 뒤 다시 시도해주세요."),
+    PHOTO_PROCESSING_FAILED(ErrorType.INVALID, "처리할 수 없는 사진입니다.");
 
     private final ErrorType type;
     private final String message;

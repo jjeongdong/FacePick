@@ -35,6 +35,7 @@ import com.back.facepick.photo.domain.PhotoSelfieStatus;
 import com.back.facepick.photo.domain.PhotoStatus;
 import com.back.facepick.photo.domain.exception.PhotoFileMissingException;
 import com.back.facepick.photo.domain.exception.PhotoNotDeletableException;
+import com.back.facepick.photo.domain.exception.PhotoProcessingUnavailableException;
 import com.back.facepick.photo.domain.exception.PhotoSelfieNotReadyException;
 import com.back.facepick.photo.domain.exception.PhotoViewNotAlbumMemberException;
 import java.time.LocalDateTime;
@@ -266,6 +267,18 @@ class PhotoControllerTest {
         mockMvc.perform(post("/api/photos/12/complete"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("PHOTO_FILE_MISSING"));
+    }
+
+    @Test
+    @DisplayName("사진 처리 서버에 연결할 수 없으면 502 PHOTO_PROCESSING_UNAVAILABLE")
+    void completePhotoReportsUnavailableProcessing() throws Exception {
+        // given
+        given(photoCompleteService.completePhoto(1L, 12L)).willThrow(new PhotoProcessingUnavailableException());
+
+        // when & then
+        mockMvc.perform(post("/api/photos/12/complete"))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.code").value("PHOTO_PROCESSING_UNAVAILABLE"));
     }
 
     @Test

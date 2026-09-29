@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -13,6 +14,7 @@ import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
 import com.back.facepick.photo.domain.PhotoPipeline;
 import com.back.facepick.photo.domain.PhotoStatus;
 import com.back.facepick.photo.domain.exception.PhotoFileMissingException;
+import com.back.facepick.photo.domain.exception.PhotoProcessingUnavailableException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -75,5 +77,20 @@ class PhotoCompleteServiceTest {
         assertThatThrownBy(() -> photoCompleteService.completePhoto(1L, 12L))
                 .isInstanceOf(PhotoFileMissingException.class);
         then(photoPipeline).should(never()).afterCommit(any());
+    }
+
+    @Test
+    @DisplayName("처리를 넘기지 못하면 예외를 그대로 알린다")
+    void propagatesPipelineFailure() {
+        // given
+        given(photoCommandService.completePhoto(1L, 12L))
+                .willReturn(new PhotoCompleteResult(12L, PhotoStatus.UPLOADED));
+        willThrow(new PhotoProcessingUnavailableException())
+                .given(photoPipeline)
+                .afterCommit(12L);
+
+        // when & then
+        assertThatThrownBy(() -> photoCompleteService.completePhoto(1L, 12L))
+                .isInstanceOf(PhotoProcessingUnavailableException.class);
     }
 }
