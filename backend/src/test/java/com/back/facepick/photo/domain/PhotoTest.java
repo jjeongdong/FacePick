@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.back.facepick.photo.domain.exception.PhotoFileMissingException;
 import com.back.facepick.photo.domain.exception.PhotoNotUploaderException;
+import com.back.facepick.photo.domain.exception.PhotoSelfieConsentRequiredException;
+import com.back.facepick.photo.domain.exception.PhotoSelfieTooLargeException;
 import com.back.facepick.photo.domain.exception.PhotoSizeMismatchException;
 import com.back.facepick.photo.domain.exception.PhotoTooLargeException;
 import com.back.facepick.photo.domain.exception.PhotoUnsupportedTypeException;
@@ -77,6 +79,74 @@ class PhotoTest {
 
         // then
         assertThat(photo.getUploaderId()).isEqualTo(2L);
+    }
+
+    @Nested
+    @DisplayName("셀피 생성")
+    class CreateSelfie {
+
+        private static final long MAX_SELFIE_BYTE_SIZE = 20L * 1024 * 1024;
+
+        @Test
+        @DisplayName("SELFIE 용도의 PENDING 사진을 앨범 사진과 같은 저장 키로 만든다")
+        void createsPendingSelfie() {
+            // when
+            Photo photo = Photo.createSelfie(10L, 1L, HASH, 1000L, "image/heic", true);
+
+            // then
+            assertThat(photo.getPurpose()).isEqualTo(PhotoPurpose.SELFIE);
+            assertThat(photo.getStatus()).isEqualTo(PhotoStatus.PENDING);
+            assertThat(photo.getStorageKey()).isEqualTo("albums/10/originals/" + HASH);
+        }
+
+        @Test
+        @DisplayName("얼굴 분석에 동의하지 않으면 PhotoSelfieConsentRequiredException")
+        void throwsWithoutConsent() {
+            // when & then
+            assertThatThrownBy(() -> Photo.createSelfie(10L, 1L, HASH, 1000L, "image/jpeg", false))
+                    .isInstanceOf(PhotoSelfieConsentRequiredException.class);
+        }
+
+        @Test
+        @DisplayName("DNG 는 PhotoUnsupportedTypeException")
+        void rejectsDng() {
+            // when & then
+            assertThatThrownBy(() -> Photo.createSelfie(10L, 1L, HASH, 1000L, "image/x-adobe-dng", true))
+                    .isInstanceOf(PhotoUnsupportedTypeException.class);
+        }
+
+        @Test
+        @DisplayName("20MB 까지는 허용하고 넘으면 PhotoSelfieTooLargeException")
+        void limitsSizeTo20Megabytes() {
+            // when
+            Photo photo = Photo.createSelfie(10L, 1L, HASH, MAX_SELFIE_BYTE_SIZE, "image/png", true);
+
+            // then
+            assertThat(photo.getByteSize()).isEqualTo(MAX_SELFIE_BYTE_SIZE);
+            assertThatThrownBy(() -> Photo.createSelfie(10L, 1L, HASH, MAX_SELFIE_BYTE_SIZE + 1, "image/png", true))
+                    .isInstanceOf(PhotoSelfieTooLargeException.class);
+        }
+
+        @Test
+        @DisplayName("앨범 사진은 ALBUM 용도다")
+        void albumPhotoIsAlbumPurpose() {
+            // when
+            Photo photo = Photo.create(10L, 1L, HASH, 1000L, "image/jpeg");
+
+            // then
+            assertThat(photo.getPurpose()).isEqualTo(PhotoPurpose.ALBUM);
+        }
+
+        @Test
+        @DisplayName("같은 해시면 같은 파일이다")
+        void comparesFileByHash() {
+            // given
+            Photo photo = Photo.createSelfie(10L, 1L, HASH, 1000L, "image/jpeg", true);
+
+            // when & then
+            assertThat(photo.hasFile(HASH)).isTrue();
+            assertThat(photo.hasFile("b".repeat(64))).isFalse();
+        }
     }
 
     @Nested

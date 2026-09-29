@@ -16,7 +16,10 @@ public enum PhotoErrorCode implements ErrorCode {
     PHOTO_DELETE_NOT_ALBUM_MEMBER(ErrorType.FORBIDDEN, "앨범 참여자만 사진을 삭제할 수 있습니다."),
     PHOTO_DELETE_ALBUM_EXPIRED(ErrorType.INVALID, "만료된 앨범의 사진은 삭제할 수 없습니다."),
     PHOTO_NOT_DELETABLE(ErrorType.FORBIDDEN, "직접 올린 사진만 삭제할 수 있습니다. 앨범장은 모든 사진을 삭제할 수 있습니다."),
-    PHOTO_SIZE_MISMATCH(ErrorType.CONFLICT, "올라간 파일 크기가 요청한 크기와 다릅니다.");
+    PHOTO_SIZE_MISMATCH(ErrorType.CONFLICT, "올라간 파일 크기가 요청한 크기와 다릅니다."),
+    PHOTO_SELFIE_CONSENT_REQUIRED(ErrorType.INVALID, "얼굴 분석에 동의해야 내 사진을 등록할 수 있습니다."),
+    PHOTO_SELFIE_TOO_LARGE(ErrorType.INVALID, "내 사진은 20MB 이하여야 합니다."),
+    PHOTO_SELFIE_NOT_READY(ErrorType.CONFLICT, "내 사진 등록이 끝나야 내가 나온 사진을 볼 수 있습니다.");
 
     private final ErrorType type;
     private final String message;

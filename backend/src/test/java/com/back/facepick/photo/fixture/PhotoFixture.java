@@ -40,4 +40,23 @@ public final class PhotoFixture {
         ReflectionTestUtils.setField(photo, "processedAt", NOW.plusMinutes(1));
         return photo;
     }
+
+    public static Photo pendingSelfie(Long photoId, Long albumId, Long uploaderId, String hash) {
+        Photo photo = Photo.createSelfie(albumId, uploaderId, hash, BYTE_SIZE, "image/jpeg", true);
+        ReflectionTestUtils.setField(photo, "id", photoId);
+        return photo;
+    }
+
+    public static Photo uploadedSelfie(Long photoId, Long albumId, Long uploaderId, String hash) {
+        Photo photo = pendingSelfie(photoId, albumId, uploaderId, hash);
+        photo.complete(uploaderId, BYTE_SIZE, NOW);
+        return photo;
+    }
+
+    public static Photo processedSelfie(Long photoId, Long albumId, Long uploaderId, String hash) {
+        Photo photo = uploadedSelfie(photoId, albumId, uploaderId, hash);
+        ReflectionTestUtils.setField(photo, "thumbnailKey", "albums/" + albumId + "/thumbnails/" + hash + ".jpg");
+        ReflectionTestUtils.setField(photo, "processedAt", NOW.plusMinutes(1));
+        return photo;
+    }
 }
