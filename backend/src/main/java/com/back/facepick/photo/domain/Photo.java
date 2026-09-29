@@ -16,6 +16,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -126,6 +127,11 @@ public class Photo extends BaseTimeEntity {
     // 저장 키에 확장자가 없고 원래 파일명은 받지 않아, 사진 ID 와 형식으로 이름을 만든다.
     public String downloadFileName() {
         return DOWNLOAD_FILE_PREFIX + id + "." + EXTENSIONS_BY_CONTENT_TYPE.get(contentType);
+    }
+
+    // 이어올리기로 업로더가 바뀌면 바뀐 사람이 기준이다. 앨범장은 앨범의 모든 사진을 지울 수 있다 (PRD F1).
+    public boolean canBeDeletedBy(Long userId, Long albumOwnerId) {
+        return Objects.equals(uploaderId, userId) || Objects.equals(albumOwnerId, userId);
     }
 
     // 먼저 시작한 사람이 업로드를 그만둬도 같은 파일을 다시 요청한 사람이 끝낼 수 있게 한다.

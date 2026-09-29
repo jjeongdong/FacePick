@@ -5,9 +5,11 @@ import com.back.facepick.global.response.CursorPageResult;
 import com.back.facepick.photo.application.PhotoCommandService;
 import com.back.facepick.photo.application.PhotoQueryService;
 import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
+import com.back.facepick.photo.application.dto.result.PhotoDeleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDetailResult;
 import com.back.facepick.photo.application.dto.result.PhotoSummaryResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
+import com.back.facepick.photo.presentation.dto.request.PhotoDeleteRequest;
 import com.back.facepick.photo.presentation.dto.request.PhotoListRequest;
 import com.back.facepick.photo.presentation.dto.request.PhotoUploadRequest;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +41,14 @@ public class PhotoController implements PhotoApiDocs {
     @PostMapping("/photos/{photoId}/complete")
     public ResponseEntity<PhotoCompleteResult> completePhoto(@AuthUser Long userId, @PathVariable Long photoId) {
         return ResponseEntity.ok(photoCommandService.completePhoto(userId, photoId));
+    }
+
+    // 여러 장을 한 번에 지우는 동작이라 DELETE 대신 POST + 동사 하위 경로를 쓴다.
+    @Override
+    @PostMapping("/albums/{albumId}/photos/delete")
+    public ResponseEntity<PhotoDeleteResult> deletePhotos(
+            @AuthUser Long userId, @PathVariable Long albumId, @RequestBody PhotoDeleteRequest request) {
+        return ResponseEntity.ok(photoCommandService.deletePhotos(userId, albumId, request.toCommand()));
     }
 
     @Override

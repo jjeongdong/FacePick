@@ -2,6 +2,7 @@ package com.back.facepick.photo.domain;
 
 import java.net.URL;
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 
 // 원본은 API 서버를 거치지 않고 스토리지로 바로 간다. 도메인이 S3 SDK 를 모르게 하려고 둔 포트.
@@ -20,4 +21,7 @@ public interface PhotoStorage {
     URL createDownloadUrl(String key, String fileName);
 
     Duration downloadUrlExpiry();
+
+    /** 키마다 지운다. 없는 키도 성공으로 본다. */
+    void deleteObjects(List<String> keys);
 }

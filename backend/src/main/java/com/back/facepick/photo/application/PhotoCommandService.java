@@ -2,15 +2,20 @@ package com.back.facepick.photo.application;
 
 import com.back.facepick.album.application.AlbumQueryApi;
 import com.back.facepick.album.application.dto.api.AlbumInfo;
+import com.back.facepick.photo.application.dto.command.PhotoDeleteCommand;
 import com.back.facepick.photo.application.dto.command.PhotoUploadCommand;
 import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
+import com.back.facepick.photo.application.dto.result.PhotoDeleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.FileResult;
 import com.back.facepick.photo.domain.Photo;
+import com.back.facepick.photo.domain.PhotoDeletePolicy;
 import com.back.facepick.photo.domain.PhotoOutbox;
 import com.back.facepick.photo.domain.PhotoOutboxRepository;
 import com.back.facepick.photo.domain.PhotoRepository;
 import com.back.facepick.photo.domain.PhotoStorage;
+import com.back.facepick.photo.domain.PhotoStorageDeletion;
+import com.back.facepick.photo.domain.PhotoStorageDeletionRepository;
 import com.back.facepick.photo.domain.PhotoUploadPolicy;
 import com.back.facepick.photo.domain.event.PhotoUploadedEvent;
 import java.time.Duration;
@@ -29,6 +34,7 @@ import tools.jackson.databind.json.JsonMapper;
 public class PhotoCommandService {
     private final PhotoRepository photoRepository;
     private final PhotoOutboxRepository photoOutboxRepository;
+    private final PhotoStorageDeletionRepository photoStorageDeletionRepository;
     private final PhotoStorage photoStorage;
     private final AlbumQueryApi albumQueryApi;
     private final JsonMapper jsonMapper;
@@ -84,6 +90,22 @@ public class PhotoCommandService {
                     now));
         }
         return PhotoCompleteResult.from(photo);
+    }
+
+    @Transactional
+    public PhotoDeleteResult deletePhotos(Long userId, Long albumId, PhotoDeleteCommand command) {
+        LocalDateTime now = LocalDateTime.now();
+        AlbumInfo album = albumQueryApi.getInfo(albumId);
+        // 이 앨범에 없는 ID(이미 지워짐, 다른 앨범 사진)는 조회 결과에서 빠져 건너뛰게 된다.
+        List<Photo> photos = photoRepository.findAllByAlbumIdAndIds(albumId, command.distinctPhotoIds());
+        PhotoDeletePolicy.validate(
+                albumQueryApi.isMember(albumId, userId), album.expiresAt(), now, userId, album.ownerId(), photos);
+
+        photoStorageDeletionRepository.saveAll(photos.stream()
+                .map(photo -> PhotoStorageDeletion.create(photo.getStorageKey(), now))
+                .toList());
+        photoRepository.deleteAll(photos);
+        return PhotoDeleteResult.from(photos);
     }
 
     private FileResult toFileResult(Photo photo) {

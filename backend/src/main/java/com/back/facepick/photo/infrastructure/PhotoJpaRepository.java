@@ -2,17 +2,26 @@ package com.back.facepick.photo.infrastructure;
 
 import com.back.facepick.photo.domain.Photo;
 import com.back.facepick.photo.domain.PhotoStatus;
+import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface PhotoJpaRepository extends JpaRepository<Photo, Long> {
     List<Photo> findAllByAlbumIdAndContentHashIn(Long albumId, Collection<String> contentHashes);
+
+    // 삭제용 조회라 행을 잠근다. 두 사람이 같은 사진을 동시에 지우면 뒤 요청이 앞 요청의 커밋을 기다렸다가
+    // 이미 지워진 행을 결과에서 빼므로, 0행 DELETE 로 500 이 나지 않고 스펙대로 건너뛴다.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    List<Photo> findAllByAlbumIdAndIdIn(Long albumId, Collection<Long> photoIds);
+
+    boolean existsByStorageKey(String storageKey);
 
     // status 는 파라미터가 아닌 리터럴로 둔다. 부분 인덱스(WHERE status = 'UPLOADED')는 조건이 리터럴이어야 쓸 수 있어서,
     // 파라미터면 DB 가 공용 실행 계획으로 바꾼 뒤 앨범 사진 전체를 읽어 정렬한다.

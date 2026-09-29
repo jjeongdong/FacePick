@@ -3,6 +3,7 @@ package com.back.facepick.photo.infrastructure;
 import com.back.facepick.photo.domain.PhotoStorage;
 import java.net.URL;
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -90,6 +91,15 @@ public class S3PhotoStorage implements PhotoStorage {
                 return Optional.empty();
             }
             throw e;
+        }
+    }
+
+    // 여러 키를 한 번에 지우는 DeleteObjects 는 체크섬 헤더가 필수라, S3 호환 스토리지와 SDK 기본 체크섬이
+    // 맞지 않을 수 있어 키마다 지운다. 없는 키도 S3 는 204 로 답한다.
+    @Override
+    public void deleteObjects(List<String> keys) {
+        for (String key : keys) {
+            s3Client.deleteObject(request -> request.bucket(bucket).key(key));
         }
     }
 

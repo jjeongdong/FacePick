@@ -48,4 +48,19 @@ public class PhotoRepositoryImpl implements PhotoRepository {
                 .findByIdAndStatus(photoId, PhotoStatus.UPLOADED)
                 .orElseThrow(PhotoNotFoundException::new);
     }
+
+    @Override
+    public List<Photo> findAllByAlbumIdAndIds(Long albumId, Collection<Long> photoIds) {
+        return photoJpaRepository.findAllByAlbumIdAndIdIn(albumId, photoIds);
+    }
+
+    @Override
+    public void deleteAll(List<Photo> photos) {
+        photoJpaRepository.deleteAll(photos);
+    }
+
+    @Override
+    public boolean existsByStorageKey(String storageKey) {
+        return photoJpaRepository.existsByStorageKey(storageKey);
+    }
 }

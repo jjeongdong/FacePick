@@ -15,8 +15,10 @@ import com.back.facepick.global.error.GlobalExceptionHandler;
 import com.back.facepick.global.response.CursorPageResult;
 import com.back.facepick.photo.application.PhotoCommandService;
 import com.back.facepick.photo.application.PhotoQueryService;
+import com.back.facepick.photo.application.dto.command.PhotoDeleteCommand;
 import com.back.facepick.photo.application.dto.command.PhotoUploadCommand;
 import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
+import com.back.facepick.photo.application.dto.result.PhotoDeleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDetailResult;
 import com.back.facepick.photo.application.dto.result.PhotoSummaryResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
@@ -24,6 +26,7 @@ import com.back.facepick.photo.application.dto.result.PhotoUploadResult.FileResu
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.Status;
 import com.back.facepick.photo.domain.PhotoStatus;
 import com.back.facepick.photo.domain.exception.PhotoFileMissingException;
+import com.back.facepick.photo.domain.exception.PhotoNotDeletableException;
 import com.back.facepick.photo.domain.exception.PhotoViewNotAlbumMemberException;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -239,6 +242,57 @@ class PhotoControllerTest {
         mockMvc.perform(get("/api/photos/12"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("PHOTO_VIEW_NOT_ALBUM_MEMBER"));
+    }
+
+    @Test
+    @DisplayName("POST /api/albums/{albumId}/photos/delete 는 200 과 지운 ID")
+    void deletePhotos() throws Exception {
+        // given
+        given(photoCommandService.deletePhotos(1L, 10L, new PhotoDeleteCommand(List.of(12L, 13L))))
+                .willReturn(new PhotoDeleteResult(List.of(12L, 13L)));
+
+        // when & then
+        mockMvc.perform(post("/api/albums/10/photos/delete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"photoIds\":[12,13]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deletedPhotoIds[0]").value(12))
+                .andExpect(jsonPath("$.deletedPhotoIds[1]").value(13));
+    }
+
+    @Test
+    @DisplayName("권한 없는 사진이 섞이면 403 PHOTO_NOT_DELETABLE")
+    void deletePhotosRejectsNotDeletable() throws Exception {
+        // given
+        given(photoCommandService.deletePhotos(1L, 10L, new PhotoDeleteCommand(List.of(12L))))
+                .willThrow(new PhotoNotDeletableException());
+
+        // when & then
+        mockMvc.perform(post("/api/albums/10/photos/delete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"photoIds\":[12]}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PHOTO_NOT_DELETABLE"));
+    }
+
+    @Test
+    @DisplayName("목록이 비었거나 없거나 null ID 가 있거나 100장을 넘으면 400 INVALID_INPUT, 서비스를 부르지 않는다")
+    void deletePhotosRejectsInvalidBody() throws Exception {
+        // given
+        String tooMany = IntStream.rangeClosed(1, 101)
+                .mapToObj(String::valueOf)
+                .collect(Collectors.joining(",", "{\"photoIds\":[", "]}"));
+
+        // when & then
+        for (String body :
+                List.of("{\"photoIds\":[]}", "{}", "{\"photoIds\":null}", "{\"photoIds\":[null]}", tooMany)) {
+            mockMvc.perform(post("/api/albums/10/photos/delete")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+        }
+        then(photoCommandService).should(never()).deletePhotos(any(), any(), any());
     }
 
     // 첫 파일은 HASH, 나머지는 서로 다른 64자 16진수 해시.

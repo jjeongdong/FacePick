@@ -206,4 +206,51 @@ class PhotoTest {
             assertThat(photo.downloadFileName()).isEqualTo("facepick-12." + extension);
         }
     }
+
+    @Nested
+    @DisplayName("삭제 권한")
+    class CanBeDeletedBy {
+
+        @Test
+        @DisplayName("업로더는 지울 수 있다")
+        void uploaderCanDelete() {
+            // given
+            Photo photo = PhotoFixture.uploaded(12L, 10L, 1L, HASH);
+
+            // when & then
+            assertThat(photo.canBeDeletedBy(1L, 99L)).isTrue();
+        }
+
+        @Test
+        @DisplayName("앨범장은 남이 올린 사진도 지울 수 있다")
+        void albumOwnerCanDelete() {
+            // given
+            Photo photo = PhotoFixture.uploaded(12L, 10L, 1L, HASH);
+
+            // when & then
+            assertThat(photo.canBeDeletedBy(99L, 99L)).isTrue();
+        }
+
+        @Test
+        @DisplayName("업로더도 앨범장도 아니면 지울 수 없다")
+        void othersCannotDelete() {
+            // given
+            Photo photo = PhotoFixture.uploaded(12L, 10L, 1L, HASH);
+
+            // when & then
+            assertThat(photo.canBeDeletedBy(2L, 99L)).isFalse();
+        }
+
+        @Test
+        @DisplayName("이어올리기로 업로더가 바뀌면 원래 업로더는 지울 수 없다")
+        void formerUploaderCannotDelete() {
+            // given
+            Photo photo = PhotoFixture.pending(12L, 10L, 1L);
+            photo.reassignUploader(2L);
+
+            // when & then
+            assertThat(photo.canBeDeletedBy(1L, 99L)).isFalse();
+            assertThat(photo.canBeDeletedBy(2L, 99L)).isTrue();
+        }
+    }
 }
