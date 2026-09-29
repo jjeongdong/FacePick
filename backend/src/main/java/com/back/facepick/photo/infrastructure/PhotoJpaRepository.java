@@ -23,6 +23,16 @@ public interface PhotoJpaRepository extends JpaRepository<Photo, Long> {
 
     boolean existsByStorageKey(String storageKey);
 
+    @Query(
+            """
+            select p from Photo p
+            where p.albumId = :albumId and p.id in :photoIds
+              and p.status = com.back.facepick.photo.domain.PhotoStatus.UPLOADED
+            order by p.id
+            """)
+    List<Photo> findUploadedByAlbumIdAndIdIn(
+            @Param("albumId") Long albumId, @Param("photoIds") Collection<Long> photoIds);
+
     // status 는 파라미터가 아닌 리터럴로 둔다. 부분 인덱스(WHERE status = 'UPLOADED')는 조건이 리터럴이어야 쓸 수 있어서,
     // 파라미터면 DB 가 공용 실행 계획으로 바꾼 뒤 앨범 사진 전체를 읽어 정렬한다.
     @Query(

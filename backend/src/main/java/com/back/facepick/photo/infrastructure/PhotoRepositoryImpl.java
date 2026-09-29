@@ -55,6 +55,11 @@ public class PhotoRepositoryImpl implements PhotoRepository {
     }
 
     @Override
+    public List<Photo> findUploadedByAlbumIdAndIds(Long albumId, Collection<Long> photoIds) {
+        return photoJpaRepository.findUploadedByAlbumIdAndIdIn(albumId, photoIds);
+    }
+
+    @Override
     public void deleteAll(List<Photo> photos) {
         photoJpaRepository.deleteAll(photos);
     }
