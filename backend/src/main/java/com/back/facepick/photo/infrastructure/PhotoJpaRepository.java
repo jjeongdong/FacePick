@@ -69,6 +69,18 @@ public interface PhotoJpaRepository extends JpaRepository<Photo, Long> {
 
     Optional<Photo> findByAlbumIdAndUploaderIdAndPurpose(Long albumId, Long uploaderId, PhotoPurpose purpose);
 
+    // 네이티브 쿼리를 쓰는 이유: advisory lock 은 JPQL 로 표현할 수 없다. void 를 돌려줘 FROM 절에서 불러 1 을 받는다.
+    // 두 int 형식이라 face-worker·얼굴 정리의 앨범 잠금(bigint 한 개)과 키 공간이 겹치지 않는다.
+    @Query(
+            value =
+                    """
+                    SELECT 1 FROM pg_advisory_xact_lock(
+                        hashtext('photo-selfie'),
+                        hashtext(CAST(:albumId AS text) || ':' || CAST(:uploaderId AS text)))
+                    """,
+            nativeQuery = true)
+    Integer lockSelfie(@Param("albumId") Long albumId, @Param("uploaderId") Long uploaderId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query(
             """

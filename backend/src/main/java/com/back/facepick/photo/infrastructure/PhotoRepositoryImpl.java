@@ -78,6 +78,11 @@ public class PhotoRepositoryImpl implements PhotoRepository {
     }
 
     @Override
+    public void lockSelfie(Long albumId, Long uploaderId) {
+        photoJpaRepository.lockSelfie(albumId, uploaderId);
+    }
+
+    @Override
     public Optional<Photo> findSelfieForUpdate(Long albumId, Long uploaderId) {
         return photoJpaRepository.findSelfieForUpdate(albumId, uploaderId);
     }

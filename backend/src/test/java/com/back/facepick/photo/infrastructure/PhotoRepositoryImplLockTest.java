@@ -81,6 +81,36 @@ class PhotoRepositoryImplLockTest {
         assertThat(second.get(WAIT_SECONDS, TimeUnit.SECONDS)).isEmpty();
     }
 
+    @Test
+    @DisplayName("셀피 잠금 - 같은 멤버의 두 번째 요청은 첫 트랜잭션이 끝날 때까지 기다리고, 다른 멤버는 기다리지 않는다")
+    void selfieLockSerializesSameMemberOnly() throws Exception {
+        // given
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CompletableFuture<Void> first = CompletableFuture.runAsync(() -> transaction.executeWithoutResult(status -> {
+            photoRepository.lockSelfie(1L, 1L);
+            locked.countDown();
+            await(release);
+        }));
+        await(locked);
+
+        // when
+        CompletableFuture<Void> sameMember = CompletableFuture.runAsync(
+                () -> transaction.executeWithoutResult(status -> photoRepository.lockSelfie(1L, 1L)));
+        CompletableFuture<Void> otherMember = CompletableFuture.runAsync(
+                () -> transaction.executeWithoutResult(status -> photoRepository.lockSelfie(1L, 2L)));
+        otherMember.get(WAIT_SECONDS, TimeUnit.SECONDS);
+        Thread.sleep(HOLD_MILLIS);
+        boolean sameMemberFinishedWhileLocked = sameMember.isDone();
+        release.countDown();
+        first.get(WAIT_SECONDS, TimeUnit.SECONDS);
+        sameMember.get(WAIT_SECONDS, TimeUnit.SECONDS);
+
+        // then
+        assertThat(sameMemberFinishedWhileLocked).isFalse();
+    }
+
     private static void await(CountDownLatch latch) {
         try {
             assertThat(latch.await(WAIT_SECONDS, TimeUnit.SECONDS)).isTrue();

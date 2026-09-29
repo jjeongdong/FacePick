@@ -126,6 +126,7 @@ public class PhotoCommandService {
         PhotoUploadPolicy.validate(albumQueryApi.isMember(albumId, userId), album.expiresAt(), now);
         Photo.validateSelfieFile(command.contentType(), command.byteSize(), command.faceAnalysisConsent());
 
+        photoRepository.lockSelfie(albumId, userId);
         Optional<Photo> current = photoRepository.findSelfieForUpdate(albumId, userId);
         if (current.isPresent() && current.orElseThrow().hasFile(command.contentHash())) {
             Photo selfie = current.orElseThrow();
@@ -148,16 +149,9 @@ public class PhotoCommandService {
     @Transactional
     public void deleteSelfie(Long userId, Long albumId) {
         LocalDateTime now = LocalDateTime.now();
-        AlbumInfo album = albumQueryApi.getInfo(albumId);
-        Optional<Photo> selfie = photoRepository.findSelfieForUpdate(albumId, userId);
-        PhotoDeletePolicy.validate(
-                albumQueryApi.isMember(albumId, userId),
-                album.expiresAt(),
-                now,
-                userId,
-                album.ownerId(),
-                selfie.stream().toList());
-        selfie.ifPresent(photo -> discardSelfie(albumId, photo, now));
+        PhotoDeletePolicy.validateSelfieDelete(albumQueryApi.isMember(albumId, userId));
+        photoRepository.lockSelfie(albumId, userId);
+        photoRepository.findSelfieForUpdate(albumId, userId).ifPresent(selfie -> discardSelfie(albumId, selfie, now));
     }
 
     // 사진 삭제와 같은 정리(스토리지 대기열, 얼굴 데이터 정리 이벤트)를 하되, 같은 트랜잭션에서 새 셀피를 넣을 수 있게 바로 지운다.

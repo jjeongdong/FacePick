@@ -36,7 +36,12 @@ public interface PhotoRepository {
     // 멤버의 셀피. 상태와 관계없다.
     Optional<Photo> findSelfie(Long albumId, Long uploaderId);
 
-    // 셀피 교체·취소용이라 행을 잠근다. 같은 멤버의 동시 요청이 서로의 삭제를 기다린다.
+    // 같은 멤버의 셀피 요청을 줄 세운다. 트랜잭션이 끝날 때 풀린다.
+    // 셀피 행을 잠그는 것만으로는 부족하다: 셀피가 없으면 잠글 행이 없고, 먼저 끝난 요청이 행을 지우고 새로 넣으면
+    // 기다리던 요청은 지워진 행을 건너뛰어 "셀피 없음"으로 보고 또 넣으려다 멤버당 셀피 하나 인덱스에 걸린다.
+    void lockSelfie(Long albumId, Long uploaderId);
+
+    // 셀피 교체·취소용이라 행을 잠근다. lockSelfie 뒤에 불러야 앞선 요청이 커밋한 셀피를 본다.
     Optional<Photo> findSelfieForUpdate(Long albumId, Long uploaderId);
 
     // photoIds 중 이 앨범의 업로드 완료 앨범 사진을 완료 시각 최신 순으로. 첫 페이지.

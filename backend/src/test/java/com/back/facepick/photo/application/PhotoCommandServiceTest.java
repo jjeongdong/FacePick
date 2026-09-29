@@ -523,6 +523,24 @@ class PhotoCommandServiceTest {
         }
 
         @Test
+        @DisplayName("셀피를 조회하기 전에 멤버 단위 잠금을 건다 (셀피 행이 없어도 같은 멤버의 동시 요청이 줄 선다)")
+        void locksMemberBeforeReadingSelfie() throws Exception {
+            // given
+            givenMemberOfOpenAlbum(1L);
+            given(photoRepository.findSelfieForUpdate(ALBUM_ID, 1L)).willReturn(Optional.empty());
+            givenSaveAllAssignsIds();
+            givenUploadUrls();
+
+            // when
+            photoCommandService.createSelfieUpload(1L, ALBUM_ID, command(HASH_A, true));
+
+            // then
+            InOrder order = inOrder(photoRepository);
+            order.verify(photoRepository).lockSelfie(ALBUM_ID, 1L);
+            order.verify(photoRepository).findSelfieForUpdate(ALBUM_ID, 1L);
+        }
+
+        @Test
         @DisplayName("같은 파일의 셀피가 올라가는 중이면 RESUMED 와 서명 URL 을 다시 준다")
         void resumesPendingSelfie() throws Exception {
             // given
@@ -632,10 +650,33 @@ class PhotoCommandServiceTest {
     class DeleteSelfie {
 
         @Test
-        @DisplayName("셀피를 바로 지우고 대기열과 삭제 이벤트를 남긴다")
+        @DisplayName("멤버 단위 잠금을 건 뒤 셀피를 바로 지우고 대기열과 삭제 이벤트를 남긴다")
         void deletesSelfie() {
             // given
-            givenMemberOfOpenAlbum(1L);
+            given(albumQueryApi.isMember(ALBUM_ID, 1L)).willReturn(true);
+            Photo selfie = PhotoFixture.uploadedSelfie(50L, ALBUM_ID, 1L, HASH_A);
+            given(photoRepository.findSelfieForUpdate(ALBUM_ID, 1L)).willReturn(Optional.of(selfie));
+
+            // when
+            photoCommandService.deleteSelfie(1L, ALBUM_ID);
+
+            // then
+            InOrder order = inOrder(photoRepository);
+            order.verify(photoRepository).lockSelfie(ALBUM_ID, 1L);
+            order.verify(photoRepository).findSelfieForUpdate(ALBUM_ID, 1L);
+            order.verify(photoRepository).deleteAndFlush(selfie);
+            then(photoStorageDeletionRepository).should().saveAll(anyList());
+            then(eventPublisher).should().publishEvent(new PhotosDeletedEvent(ALBUM_ID, List.of(50L)));
+        }
+
+        @Test
+        @DisplayName("만료된 앨범이어도 지운다 (얼굴 분석 동의 철회는 언제든 가능해야 한다)")
+        void deletesSelfieOfExpiredAlbum() {
+            // given
+            lenient()
+                    .when(albumQueryApi.getInfo(ALBUM_ID))
+                    .thenReturn(new AlbumInfo(ALBUM_ID, 99L, LocalDateTime.now().minusDays(1)));
+            given(albumQueryApi.isMember(ALBUM_ID, 1L)).willReturn(true);
             Photo selfie = PhotoFixture.uploadedSelfie(50L, ALBUM_ID, 1L, HASH_A);
             given(photoRepository.findSelfieForUpdate(ALBUM_ID, 1L)).willReturn(Optional.of(selfie));
 
@@ -644,15 +685,13 @@ class PhotoCommandServiceTest {
 
             // then
             then(photoRepository).should().deleteAndFlush(selfie);
-            then(photoStorageDeletionRepository).should().saveAll(anyList());
-            then(eventPublisher).should().publishEvent(new PhotosDeletedEvent(ALBUM_ID, List.of(50L)));
         }
 
         @Test
         @DisplayName("셀피가 없으면 아무것도 하지 않는다")
         void doesNothingWithoutSelfie() {
             // given
-            givenMemberOfOpenAlbum(1L);
+            given(albumQueryApi.isMember(ALBUM_ID, 1L)).willReturn(true);
             given(photoRepository.findSelfieForUpdate(ALBUM_ID, 1L)).willReturn(Optional.empty());
 
             // when
@@ -664,17 +703,15 @@ class PhotoCommandServiceTest {
         }
 
         @Test
-        @DisplayName("참여자가 아니면 PhotoDeleteNotAlbumMemberException")
+        @DisplayName("참여자가 아니면 PhotoDeleteNotAlbumMemberException 이고 잠그거나 조회하지 않는다")
         void rejectsNonMember() {
             // given
-            given(albumQueryApi.getInfo(ALBUM_ID))
-                    .willReturn(new AlbumInfo(ALBUM_ID, 99L, LocalDateTime.now().plusDays(1)));
             given(albumQueryApi.isMember(ALBUM_ID, 3L)).willReturn(false);
-            given(photoRepository.findSelfieForUpdate(ALBUM_ID, 3L)).willReturn(Optional.empty());
 
             // when & then
             assertThatThrownBy(() -> photoCommandService.deleteSelfie(3L, ALBUM_ID))
                     .isInstanceOf(PhotoDeleteNotAlbumMemberException.class);
+            then(photoRepository).shouldHaveNoInteractions();
         }
     }
 

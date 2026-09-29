@@ -11,6 +11,13 @@ public final class PhotoDeletePolicy {
 
     private PhotoDeletePolicy() {}
 
+    // 셀피 취소는 얼굴 분석 동의 철회라 앨범이 만료돼도 참여자면 할 수 있어야 한다.
+    public static void validateSelfieDelete(boolean albumMember) {
+        if (!albumMember) {
+            throw new PhotoDeleteNotAlbumMemberException();
+        }
+    }
+
     public static void validate(
             boolean albumMember,
             LocalDateTime albumExpiresAt,
