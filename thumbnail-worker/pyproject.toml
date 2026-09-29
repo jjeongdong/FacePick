@@ -10,10 +10,16 @@ dependencies = [
     "pillow-heif",       # iPhone HEIC 디코딩
     "psycopg[binary]",   # photos 테이블 갱신
     "python-dotenv",
+    "fastapi>=0.141.1",  # HTTP 모드 입구 (동기 방식 비교용)
+    "uvicorn>=0.54.0",   # HTTP 모드 서버
 ]
 
 [dependency-groups]
-dev = ["pytest", "ruff"]
+dev = [  # FastAPI TestClient
+    "httpx2>=2.13.1",  # FastAPI TestClient
+    "pytest",
+    "ruff",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

@@ -16,6 +16,7 @@ class Config:
     s3_secret_key: str
     s3_bucket: str
     database_url: str
+    http_port: int
 
 
 def load_config() -> Config:
@@ -31,4 +32,5 @@ def load_config() -> Config:
         s3_secret_key=os.environ["S3_SECRET_KEY"],
         s3_bucket=os.environ["S3_BUCKET"],
         database_url=os.environ["DATABASE_URL"],
+        http_port=int(os.environ.get("HTTP_PORT", "8091")),
     )

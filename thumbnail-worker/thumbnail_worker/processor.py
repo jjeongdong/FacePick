@@ -18,9 +18,10 @@ class PhotoProcessor:
         self,
         repository: PhotoRepository,
         storage: PhotoStorage,
-        producer: Producer,
-        preview_ready_topic: str,
+        producer: Producer | None = None,
+        preview_ready_topic: str | None = None,
     ):
+        # HTTP 모드는 결과를 응답으로 돌려주므로 producer 없이 만든다.
         self._repository = repository
         self._storage = storage
         self._producer = producer
@@ -28,20 +29,22 @@ class PhotoProcessor:
 
     def handle(self, value: bytes | None) -> None:
         message = parse_photo_uploaded(value)
-        row = self._repository.find(message.photo_id)
+        result = self.process(message.photo_id)
+        if result is not None:
+            self._publish(result)
+
+    def process(self, photo_id: int) -> PreviewReady | None:
+        """썸네일·미리보기를 만들고 photos 를 갱신한다. 발행은 하지 않는다. 행이 없으면 None."""
+        row = self._repository.find(photo_id)
         if row is None:
-            log.warning("photos 에 행이 없어 건너뛴다: photoId=%s", message.photo_id)
-            return
+            log.warning("photos 에 행이 없어 건너뛴다: photoId=%s", photo_id)
+            return None
 
         if row.processed_at is not None:
-            # UPDATE 커밋 뒤 발행 전에 죽었을 수 있으니 발행만 다시 한다.
-            log.info(
-                "이미 처리된 사진이라 preview_ready 만 다시 발행한다: photoId=%s", row.photo_id
-            )
-            self._publish(
-                PreviewReady(row.photo_id, row.album_id, row.preview_key, row.width, row.height)
-            )
-            return
+            # 다시 만들지 않고 저장된 값을 돌려준다. Kafka 모드는 UPDATE 커밋 뒤 발행 전에
+            # 죽었을 수 있어 이 값을 다시 발행하고, HTTP 모드는 재시도 요청에 이 값을 응답한다.
+            log.info("이미 처리된 사진이라 저장된 값을 돌려준다: photoId=%s", row.photo_id)
+            return PreviewReady(row.photo_id, row.album_id, row.preview_key, row.width, row.height)
 
         thumbnail_key, preview_key = derived_keys(row.storage_key)
         renditions = render(self._storage.download(row.storage_key))
@@ -57,12 +60,10 @@ class PhotoProcessor:
             renditions.taken_at,
             datetime.now(),
         )
-        self._publish(
-            PreviewReady(
-                row.photo_id, row.album_id, preview_key, renditions.width, renditions.height
-            )
-        )
         log.info("처리 완료: photoId=%s %sx%s", row.photo_id, renditions.width, renditions.height)
+        return PreviewReady(
+            row.photo_id, row.album_id, preview_key, renditions.width, renditions.height
+        )
 
     def _publish(self, event: PreviewReady) -> None:
         produce_and_wait(self._producer, self._preview_ready_topic, event.key(), event.to_json())
