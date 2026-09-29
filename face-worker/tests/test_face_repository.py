@@ -125,9 +125,11 @@ def test_photo_exists(repository, insert_photo, unique_album_id):
     assert not repository.photo_exists(photo_id + 1_000_000_000)
 
 
-def test_photo_exists_inside_transaction(repository, insert_photo, unique_album_id):
-    photo_id = insert_photo(unique_album_id)
+def test_photo_purpose_inside_transaction(repository, insert_photo, unique_album_id):
+    album_photo = insert_photo(unique_album_id)
+    selfie = insert_photo(unique_album_id + 1, purpose="SELFIE")
 
     with repository.album_transaction(unique_album_id) as album:
-        assert album.photo_exists(photo_id)
-        assert not album.photo_exists(photo_id + 1_000_000_000)
+        assert album.photo_purpose(album_photo) == "ALBUM"
+        assert album.photo_purpose(selfie) == "SELFIE"
+        assert album.photo_purpose(album_photo + 1_000_000_000) is None

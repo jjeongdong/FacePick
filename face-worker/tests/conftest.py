@@ -43,17 +43,18 @@ def unique_album_id() -> int:
 def insert_photo(config: Config) -> Iterator:
     inserted: list[int] = []
 
-    def insert(album_id: int) -> int:
+    def insert(album_id: int, purpose: str = "ALBUM") -> int:
         content_hash = secrets.token_hex(32)
         with psycopg.connect(config.database_url) as conn:
             photo_id = conn.execute(
                 """
                 INSERT INTO photos (album_id, uploader_id, content_hash, byte_size, content_type,
-                                    storage_key, status, uploaded_at, created_at, modified_at)
-                VALUES (%s, 1, %s, 1, 'image/jpeg', %s, 'UPLOADED', now(), now(), now())
+                                    storage_key, status, uploaded_at, created_at, modified_at,
+                                    purpose)
+                VALUES (%s, 1, %s, 1, 'image/jpeg', %s, 'UPLOADED', now(), now(), now(), %s)
                 RETURNING photo_id
                 """,
-                (album_id, content_hash, f"albums/{album_id}/originals/{content_hash}"),
+                (album_id, content_hash, f"albums/{album_id}/originals/{content_hash}", purpose),
             ).fetchone()[0]
         inserted.append(photo_id)
         return photo_id
