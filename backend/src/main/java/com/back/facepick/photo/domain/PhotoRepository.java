@@ -23,6 +23,9 @@ public interface PhotoRepository {
     // 상태와 관계없이 이 앨범의 사진만. 없는 ID·다른 앨범 사진은 결과에서 빠진다.
     List<Photo> findAllByAlbumIdAndIds(Long albumId, Collection<Long> photoIds);
 
+    // 이 앨범의 업로드 완료 사진만, photo_id 오름차순. 없는 ID·PENDING·다른 앨범 사진은 결과에서 빠진다. 잠그지 않는다.
+    List<Photo> findUploadedByAlbumIdAndIds(Long albumId, Collection<Long> photoIds);
+
     void deleteAll(List<Photo> photos);
 
     // 같은 저장 키(같은 앨범·같은 파일)를 쓰는 사진이 있는지. 상태와 관계없다.

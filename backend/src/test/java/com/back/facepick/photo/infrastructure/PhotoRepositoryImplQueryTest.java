@@ -189,6 +189,25 @@ class PhotoRepositoryImplQueryTest {
     }
 
     @Test
+    @DisplayName("앨범·ID 업로드 사진 조회 - 이 앨범의 업로드 완료 사진만 photo_id 오름차순으로 돌려준다")
+    void findsUploadedByAlbumAndIds() {
+        // given
+        Photo second = uploaded(1L, hash(1), T);
+        Photo first = uploaded(1L, hash(2), T.minusHours(1));
+        Photo pending = Photo.create(1L, 1L, hash(3), 1000L, "image/jpeg");
+        Photo otherAlbum = uploaded(2L, hash(4), T);
+        photoRepository.saveAll(List.of(first, second, pending, otherAlbum));
+        flushAndClear();
+
+        // when
+        List<Photo> photos = photoRepository.findUploadedByAlbumIdAndIds(
+                1L, List.of(second.getId(), first.getId(), pending.getId(), otherAlbum.getId(), 999L));
+
+        // then
+        assertThat(photos).extracting(Photo::getId).containsExactly(first.getId(), second.getId());
+    }
+
+    @Test
     @DisplayName("삭제 후 재저장 - 지운 사진과 같은 해시로 다시 올릴 수 있다")
     void allowsSameHashAfterDelete() {
         // given
