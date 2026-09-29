@@ -3,9 +3,11 @@ package com.back.facepick.photo.application;
 import com.back.facepick.album.application.AlbumQueryApi;
 import com.back.facepick.album.application.dto.api.AlbumInfo;
 import com.back.facepick.photo.application.dto.command.PhotoDeleteCommand;
+import com.back.facepick.photo.application.dto.command.PhotoSelfieUploadCommand;
 import com.back.facepick.photo.application.dto.command.PhotoUploadCommand;
 import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDeleteResult;
+import com.back.facepick.photo.application.dto.result.PhotoSelfieUploadResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.FileResult;
 import com.back.facepick.photo.domain.Photo;
@@ -25,6 +27,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -114,6 +117,62 @@ public class PhotoCommandService {
             eventPublisher.publishEvent(new PhotosDeletedEvent(albumId, result.deletedPhotoIds()));
         }
         return result;
+    }
+
+    @Transactional
+    public PhotoSelfieUploadResult createSelfieUpload(Long userId, Long albumId, PhotoSelfieUploadCommand command) {
+        LocalDateTime now = LocalDateTime.now();
+        AlbumInfo album = albumQueryApi.getInfo(albumId);
+        PhotoUploadPolicy.validate(albumQueryApi.isMember(albumId, userId), album.expiresAt(), now);
+        Photo.validateSelfieFile(command.contentType(), command.byteSize(), command.faceAnalysisConsent());
+
+        Optional<Photo> current = photoRepository.findSelfieForUpdate(albumId, userId);
+        if (current.isPresent() && current.orElseThrow().hasFile(command.contentHash())) {
+            Photo selfie = current.orElseThrow();
+            return selfie.isUploaded()
+                    ? PhotoSelfieUploadResult.alreadyUploaded(selfie)
+                    : selfieUploadResult(selfie, PhotoSelfieUploadResult.Status.RESUMED, now);
+        }
+        current.ifPresent(selfie -> discardSelfie(albumId, selfie, now));
+        Photo selfie = Photo.createSelfie(
+                albumId,
+                userId,
+                command.contentHash(),
+                command.byteSize(),
+                command.contentType(),
+                command.faceAnalysisConsent());
+        photoRepository.saveAll(List.of(selfie));
+        return selfieUploadResult(selfie, PhotoSelfieUploadResult.Status.NEW, now);
+    }
+
+    @Transactional
+    public void deleteSelfie(Long userId, Long albumId) {
+        LocalDateTime now = LocalDateTime.now();
+        AlbumInfo album = albumQueryApi.getInfo(albumId);
+        Optional<Photo> selfie = photoRepository.findSelfieForUpdate(albumId, userId);
+        PhotoDeletePolicy.validate(
+                albumQueryApi.isMember(albumId, userId),
+                album.expiresAt(),
+                now,
+                userId,
+                album.ownerId(),
+                selfie.stream().toList());
+        selfie.ifPresent(photo -> discardSelfie(albumId, photo, now));
+    }
+
+    // 사진 삭제와 같은 정리(스토리지 대기열, 얼굴 데이터 정리 이벤트)를 하되, 같은 트랜잭션에서 새 셀피를 넣을 수 있게 바로 지운다.
+    private void discardSelfie(Long albumId, Photo selfie, LocalDateTime now) {
+        photoStorageDeletionRepository.saveAll(List.of(PhotoStorageDeletion.create(selfie.getStorageKey(), now)));
+        photoRepository.deleteAndFlush(selfie);
+        eventPublisher.publishEvent(new PhotosDeletedEvent(albumId, List.of(selfie.getId())));
+    }
+
+    private PhotoSelfieUploadResult selfieUploadResult(
+            Photo selfie, PhotoSelfieUploadResult.Status status, LocalDateTime now) {
+        String uploadUrl = photoStorage
+                .createUploadUrl(selfie.getStorageKey(), selfie.getContentType())
+                .toString();
+        return PhotoSelfieUploadResult.of(selfie, status, uploadUrl, now.plus(photoStorage.uploadUrlExpiry()));
     }
 
     private FileResult toFileResult(Photo photo) {

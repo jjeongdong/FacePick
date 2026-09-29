@@ -8,22 +8,26 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 
 import com.back.facepick.album.application.AlbumQueryApi;
 import com.back.facepick.album.application.dto.api.AlbumInfo;
 import com.back.facepick.photo.application.dto.command.PhotoDeleteCommand;
+import com.back.facepick.photo.application.dto.command.PhotoSelfieUploadCommand;
 import com.back.facepick.photo.application.dto.command.PhotoUploadCommand;
 import com.back.facepick.photo.application.dto.command.PhotoUploadCommand.UploadFile;
 import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDeleteResult;
+import com.back.facepick.photo.application.dto.result.PhotoSelfieUploadResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.FileResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.Status;
 import com.back.facepick.photo.domain.Photo;
 import com.back.facepick.photo.domain.PhotoOutbox;
 import com.back.facepick.photo.domain.PhotoOutboxRepository;
+import com.back.facepick.photo.domain.PhotoPurpose;
 import com.back.facepick.photo.domain.PhotoRepository;
 import com.back.facepick.photo.domain.PhotoStatus;
 import com.back.facepick.photo.domain.PhotoStorage;
@@ -36,6 +40,7 @@ import com.back.facepick.photo.domain.exception.PhotoDeleteNotAlbumMemberExcepti
 import com.back.facepick.photo.domain.exception.PhotoFileMissingException;
 import com.back.facepick.photo.domain.exception.PhotoNotAlbumMemberException;
 import com.back.facepick.photo.domain.exception.PhotoNotDeletableException;
+import com.back.facepick.photo.domain.exception.PhotoSelfieConsentRequiredException;
 import com.back.facepick.photo.domain.exception.PhotoUnsupportedTypeException;
 import com.back.facepick.photo.fixture.PhotoFixture;
 import java.net.URI;
@@ -48,6 +53,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
@@ -481,6 +487,194 @@ class PhotoCommandServiceTest {
         private void givenAlbum(Long userId, boolean member, LocalDateTime expiresAt) {
             given(albumQueryApi.getInfo(ALBUM_ID)).willReturn(new AlbumInfo(ALBUM_ID, OWNER_ID, expiresAt));
             given(albumQueryApi.isMember(ALBUM_ID, userId)).willReturn(member);
+        }
+    }
+
+    @Nested
+    @DisplayName("셀피 업로드 URL 발급")
+    class CreateSelfieUpload {
+
+        private PhotoSelfieUploadCommand command(String hash, boolean consent) {
+            return new PhotoSelfieUploadCommand(hash, 1000L, "image/jpeg", consent);
+        }
+
+        @Test
+        @SuppressWarnings("unchecked")
+        @DisplayName("셀피가 없으면 SELFIE 사진을 만들고 NEW 와 서명 URL 을 준다")
+        void createsNewSelfie() throws Exception {
+            // given
+            givenMemberOfOpenAlbum(1L);
+            given(photoRepository.findSelfieForUpdate(ALBUM_ID, 1L)).willReturn(Optional.empty());
+            givenSaveAllAssignsIds();
+            givenUploadUrls();
+
+            // when
+            PhotoSelfieUploadResult result =
+                    photoCommandService.createSelfieUpload(1L, ALBUM_ID, command(HASH_A, true));
+
+            // then
+            assertThat(result.status()).isEqualTo(PhotoSelfieUploadResult.Status.NEW);
+            assertThat(result.photoId()).isEqualTo(100L);
+            assertThat(result.uploadUrl()).isNotNull();
+            ArgumentCaptor<List<Photo>> captor = ArgumentCaptor.forClass(List.class);
+            then(photoRepository).should().saveAll(captor.capture());
+            assertThat(captor.getValue()).extracting(Photo::getPurpose).containsExactly(PhotoPurpose.SELFIE);
+            then(photoRepository).should(never()).deleteAndFlush(any());
+        }
+
+        @Test
+        @DisplayName("같은 파일의 셀피가 올라가는 중이면 RESUMED 와 서명 URL 을 다시 준다")
+        void resumesPendingSelfie() throws Exception {
+            // given
+            givenMemberOfOpenAlbum(1L);
+            given(photoRepository.findSelfieForUpdate(ALBUM_ID, 1L))
+                    .willReturn(Optional.of(PhotoFixture.pendingSelfie(50L, ALBUM_ID, 1L, HASH_A)));
+            givenUploadUrls();
+
+            // when
+            PhotoSelfieUploadResult result =
+                    photoCommandService.createSelfieUpload(1L, ALBUM_ID, command(HASH_A, true));
+
+            // then
+            assertThat(result.status()).isEqualTo(PhotoSelfieUploadResult.Status.RESUMED);
+            assertThat(result.photoId()).isEqualTo(50L);
+            then(photoRepository).should(never()).saveAll(anyList());
+        }
+
+        @Test
+        @DisplayName("같은 파일의 셀피가 이미 올라갔으면 ALREADY_UPLOADED 이고 URL 이 없다")
+        void answersAlreadyUploaded() {
+            // given
+            givenMemberOfOpenAlbum(1L);
+            given(photoRepository.findSelfieForUpdate(ALBUM_ID, 1L))
+                    .willReturn(Optional.of(PhotoFixture.uploadedSelfie(50L, ALBUM_ID, 1L, HASH_A)));
+
+            // when
+            PhotoSelfieUploadResult result =
+                    photoCommandService.createSelfieUpload(1L, ALBUM_ID, command(HASH_A, true));
+
+            // then
+            assertThat(result.status()).isEqualTo(PhotoSelfieUploadResult.Status.ALREADY_UPLOADED);
+            assertThat(result.uploadUrl()).isNull();
+            then(photoStorage).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("다른 파일이면 옛 셀피를 바로 지우고(대기열·삭제 이벤트) 새 셀피를 만든다")
+        void replacesSelfieWithDifferentFile() throws Exception {
+            // given
+            givenMemberOfOpenAlbum(1L);
+            Photo old = PhotoFixture.uploadedSelfie(50L, ALBUM_ID, 1L, HASH_A);
+            given(photoRepository.findSelfieForUpdate(ALBUM_ID, 1L)).willReturn(Optional.of(old));
+            givenSaveAllAssignsIds();
+            givenUploadUrls();
+
+            // when
+            PhotoSelfieUploadResult result =
+                    photoCommandService.createSelfieUpload(1L, ALBUM_ID, command(HASH_B, true));
+
+            // then
+            assertThat(result.status()).isEqualTo(PhotoSelfieUploadResult.Status.NEW);
+            InOrder order = inOrder(photoRepository);
+            order.verify(photoRepository).deleteAndFlush(old);
+            order.verify(photoRepository).saveAll(anyList());
+            then(photoStorageDeletionRepository)
+                    .should()
+                    .saveAll(argThat((List<PhotoStorageDeletion> deletions) -> deletions.size() == 1
+                            && deletions.getFirst().getStorageKey().equals(old.getStorageKey())));
+            then(eventPublisher).should().publishEvent(new PhotosDeletedEvent(ALBUM_ID, List.of(50L)));
+        }
+
+        @Test
+        @DisplayName("앨범에 같은 파일의 사진이 있어도 셀피를 새로 만든다 (중복 검사를 하지 않는다)")
+        void createsNewSelfieEvenIfAlbumHasSameFile() throws Exception {
+            // given
+            givenMemberOfOpenAlbum(1L);
+            given(photoRepository.findSelfieForUpdate(ALBUM_ID, 1L)).willReturn(Optional.empty());
+            givenSaveAllAssignsIds();
+            givenUploadUrls();
+
+            // when
+            photoCommandService.createSelfieUpload(1L, ALBUM_ID, command(HASH_A, true));
+
+            // then
+            then(photoRepository).should(never()).findAllByAlbumIdAndContentHashes(any(), any());
+        }
+
+        @Test
+        @DisplayName("얼굴 분석에 동의하지 않으면 PhotoSelfieConsentRequiredException 이고 아무것도 바꾸지 않는다")
+        void rejectsWithoutConsent() {
+            // given
+            givenMemberOfOpenAlbum(1L);
+
+            // when & then
+            assertThatThrownBy(() -> photoCommandService.createSelfieUpload(1L, ALBUM_ID, command(HASH_A, false)))
+                    .isInstanceOf(PhotoSelfieConsentRequiredException.class);
+            then(photoRepository).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("참여자가 아니면 PhotoNotAlbumMemberException")
+        void rejectsNonMember() {
+            // given
+            given(albumQueryApi.getInfo(ALBUM_ID))
+                    .willReturn(new AlbumInfo(ALBUM_ID, 99L, LocalDateTime.now().plusDays(1)));
+            given(albumQueryApi.isMember(ALBUM_ID, 3L)).willReturn(false);
+
+            // when & then
+            assertThatThrownBy(() -> photoCommandService.createSelfieUpload(3L, ALBUM_ID, command(HASH_A, true)))
+                    .isInstanceOf(PhotoNotAlbumMemberException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("셀피 등록 취소")
+    class DeleteSelfie {
+
+        @Test
+        @DisplayName("셀피를 바로 지우고 대기열과 삭제 이벤트를 남긴다")
+        void deletesSelfie() {
+            // given
+            givenMemberOfOpenAlbum(1L);
+            Photo selfie = PhotoFixture.uploadedSelfie(50L, ALBUM_ID, 1L, HASH_A);
+            given(photoRepository.findSelfieForUpdate(ALBUM_ID, 1L)).willReturn(Optional.of(selfie));
+
+            // when
+            photoCommandService.deleteSelfie(1L, ALBUM_ID);
+
+            // then
+            then(photoRepository).should().deleteAndFlush(selfie);
+            then(photoStorageDeletionRepository).should().saveAll(anyList());
+            then(eventPublisher).should().publishEvent(new PhotosDeletedEvent(ALBUM_ID, List.of(50L)));
+        }
+
+        @Test
+        @DisplayName("셀피가 없으면 아무것도 하지 않는다")
+        void doesNothingWithoutSelfie() {
+            // given
+            givenMemberOfOpenAlbum(1L);
+            given(photoRepository.findSelfieForUpdate(ALBUM_ID, 1L)).willReturn(Optional.empty());
+
+            // when
+            photoCommandService.deleteSelfie(1L, ALBUM_ID);
+
+            // then
+            then(photoRepository).should(never()).deleteAndFlush(any());
+            then(eventPublisher).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("참여자가 아니면 PhotoDeleteNotAlbumMemberException")
+        void rejectsNonMember() {
+            // given
+            given(albumQueryApi.getInfo(ALBUM_ID))
+                    .willReturn(new AlbumInfo(ALBUM_ID, 99L, LocalDateTime.now().plusDays(1)));
+            given(albumQueryApi.isMember(ALBUM_ID, 3L)).willReturn(false);
+            given(photoRepository.findSelfieForUpdate(ALBUM_ID, 3L)).willReturn(Optional.empty());
+
+            // when & then
+            assertThatThrownBy(() -> photoCommandService.deleteSelfie(3L, ALBUM_ID))
+                    .isInstanceOf(PhotoDeleteNotAlbumMemberException.class);
         }
     }
 
