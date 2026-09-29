@@ -83,6 +83,23 @@ class PersonSchemaMigrationTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    @Test
+    @DisplayName("V11 - 대표 얼굴을 지우면 인물의 cover_face_id 가 비워진다")
+    void clearsCoverWhenCoverFaceDeleted() {
+        // given
+        Long personId = insertPerson(1L);
+        Long faceId = insertFace(personId, 1L, vector(1.0, 0.0));
+        jdbcTemplate.update("UPDATE persons SET cover_face_id = ? WHERE person_id = ?", faceId, personId);
+
+        // when
+        jdbcTemplate.update("DELETE FROM faces WHERE face_id = ?", faceId);
+
+        // then
+        Long coverFaceId = jdbcTemplate.queryForObject(
+                "SELECT cover_face_id FROM persons WHERE person_id = ?", Long.class, personId);
+        assertThat(coverFaceId).isNull();
+    }
+
     private Long insertPerson(Long albumId) {
         return jdbcTemplate.queryForObject(
                 "INSERT INTO persons (album_id, created_at, modified_at) VALUES (?, now(), now()) RETURNING person_id",
