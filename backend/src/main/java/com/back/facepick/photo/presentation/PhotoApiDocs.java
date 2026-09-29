@@ -4,9 +4,11 @@ import com.back.facepick.global.response.CursorPageResult;
 import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDeleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDetailResult;
+import com.back.facepick.photo.application.dto.result.PhotoDownloadResult;
 import com.back.facepick.photo.application.dto.result.PhotoSummaryResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
 import com.back.facepick.photo.presentation.dto.request.PhotoDeleteRequest;
+import com.back.facepick.photo.presentation.dto.request.PhotoDownloadRequest;
 import com.back.facepick.photo.presentation.dto.request.PhotoListRequest;
 import com.back.facepick.photo.presentation.dto.request.PhotoUploadRequest;
 import io.swagger.v3.oas.annotations.Operation;
@@ -56,4 +58,11 @@ public interface PhotoApiDocs {
                     + " 권한 없는 사진이 하나라도 있으면 아무것도 삭제하지 않고 403 입니다. 삭제는 되돌릴 수 없습니다.")
     ResponseEntity<PhotoDeleteResult> deletePhotos(
             @Parameter(hidden = true) Long userId, Long albumId, @Valid PhotoDeleteRequest request);
+
+    @Operation(
+            summary = "사진 여러 장 다운로드 URL",
+            description = "선택한 사진들의 원본 서명 URL 을 한 번에 100장까지 줍니다. 각 URL 로 받으면 fileName 으로 저장되고, urlExpiresAt 까지 유효합니다."
+                    + " 앨범 참여자만, 만료된 앨범은 400. 이 앨범에 없거나 업로드 전인 ID 는 건너뛰고 받을 수 있는 사진만 photoId 순으로 돌려줍니다.")
+    ResponseEntity<PhotoDownloadResult> getDownloads(
+            @Parameter(hidden = true) Long userId, Long albumId, @Valid PhotoDownloadRequest request);
 }

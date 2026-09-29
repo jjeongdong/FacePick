@@ -16,10 +16,12 @@ import com.back.facepick.global.response.CursorPageResult;
 import com.back.facepick.photo.application.PhotoCommandService;
 import com.back.facepick.photo.application.PhotoQueryService;
 import com.back.facepick.photo.application.dto.command.PhotoDeleteCommand;
+import com.back.facepick.photo.application.dto.command.PhotoDownloadCommand;
 import com.back.facepick.photo.application.dto.command.PhotoUploadCommand;
 import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDeleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDetailResult;
+import com.back.facepick.photo.application.dto.result.PhotoDownloadResult;
 import com.back.facepick.photo.application.dto.result.PhotoSummaryResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.FileResult;
@@ -293,6 +295,61 @@ class PhotoControllerTest {
                     .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
         }
         then(photoCommandService).should(never()).deletePhotos(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("POST /api/albums/{albumId}/photos/downloads 는 200 과 사진별 원본 URL")
+    void getDownloads() throws Exception {
+        // given
+        given(photoQueryService.getDownloads(1L, 10L, new PhotoDownloadCommand(List.of(12L, 15L))))
+                .willReturn(new PhotoDownloadResult(
+                        List.of(new PhotoDownloadResult.Item(12L, "facepick-12.jpg", "http://storage/original")), NOW));
+
+        // when & then
+        mockMvc.perform(post("/api/albums/10/photos/downloads")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"photoIds\":[12,15]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.photos[0].photoId").value(12))
+                .andExpect(jsonPath("$.photos[0].fileName").value("facepick-12.jpg"))
+                .andExpect(jsonPath("$.photos[0].originalUrl").value("http://storage/original"))
+                .andExpect(jsonPath("$.photos.length()").value(1))
+                .andExpect(jsonPath("$.urlExpiresAt").exists());
+    }
+
+    @Test
+    @DisplayName("다운로드 - 참여자가 아니면 403 PHOTO_VIEW_NOT_ALBUM_MEMBER")
+    void getDownloadsRejectsNonMember() throws Exception {
+        // given
+        given(photoQueryService.getDownloads(1L, 10L, new PhotoDownloadCommand(List.of(12L))))
+                .willThrow(new PhotoViewNotAlbumMemberException());
+
+        // when & then
+        mockMvc.perform(post("/api/albums/10/photos/downloads")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"photoIds\":[12]}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("PHOTO_VIEW_NOT_ALBUM_MEMBER"));
+    }
+
+    @Test
+    @DisplayName("다운로드 - 목록이 비었거나 없거나 null ID 가 있거나 100장을 넘으면 400 INVALID_INPUT, 서비스를 부르지 않는다")
+    void getDownloadsRejectsInvalidBody() throws Exception {
+        // given
+        String tooMany = IntStream.rangeClosed(1, 101)
+                .mapToObj(String::valueOf)
+                .collect(Collectors.joining(",", "{\"photoIds\":[", "]}"));
+
+        // when & then
+        for (String body :
+                List.of("{\"photoIds\":[]}", "{}", "{\"photoIds\":null}", "{\"photoIds\":[null]}", tooMany)) {
+            mockMvc.perform(post("/api/albums/10/photos/downloads")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+        }
+        then(photoQueryService).should(never()).getDownloads(any(), any(), any());
     }
 
     // 첫 파일은 HASH, 나머지는 서로 다른 64자 16진수 해시.

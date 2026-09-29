@@ -7,9 +7,11 @@ import com.back.facepick.photo.application.PhotoQueryService;
 import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDeleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDetailResult;
+import com.back.facepick.photo.application.dto.result.PhotoDownloadResult;
 import com.back.facepick.photo.application.dto.result.PhotoSummaryResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
 import com.back.facepick.photo.presentation.dto.request.PhotoDeleteRequest;
+import com.back.facepick.photo.presentation.dto.request.PhotoDownloadRequest;
 import com.back.facepick.photo.presentation.dto.request.PhotoListRequest;
 import com.back.facepick.photo.presentation.dto.request.PhotoUploadRequest;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +51,14 @@ public class PhotoController implements PhotoApiDocs {
     public ResponseEntity<PhotoDeleteResult> deletePhotos(
             @AuthUser Long userId, @PathVariable Long albumId, @RequestBody PhotoDeleteRequest request) {
         return ResponseEntity.ok(photoCommandService.deletePhotos(userId, albumId, request.toCommand()));
+    }
+
+    // 조회지만 ID 를 100개까지 받아 쿼리스트링이 길어지므로 본문을 쓰는 POST 로 둔다.
+    @Override
+    @PostMapping("/albums/{albumId}/photos/downloads")
+    public ResponseEntity<PhotoDownloadResult> getDownloads(
+            @AuthUser Long userId, @PathVariable Long albumId, @RequestBody PhotoDownloadRequest request) {
+        return ResponseEntity.ok(photoQueryService.getDownloads(userId, albumId, request.toCommand()));
     }
 
     @Override
