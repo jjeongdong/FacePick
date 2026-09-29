@@ -8,14 +8,18 @@ import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDeleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDetailResult;
 import com.back.facepick.photo.application.dto.result.PhotoDownloadResult;
+import com.back.facepick.photo.application.dto.result.PhotoSelfieResult;
+import com.back.facepick.photo.application.dto.result.PhotoSelfieUploadResult;
 import com.back.facepick.photo.application.dto.result.PhotoSummaryResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
 import com.back.facepick.photo.presentation.dto.request.PhotoDeleteRequest;
 import com.back.facepick.photo.presentation.dto.request.PhotoDownloadRequest;
 import com.back.facepick.photo.presentation.dto.request.PhotoListRequest;
+import com.back.facepick.photo.presentation.dto.request.PhotoSelfieUploadRequest;
 import com.back.facepick.photo.presentation.dto.request.PhotoUploadRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -72,5 +76,32 @@ public class PhotoController implements PhotoApiDocs {
     @GetMapping("/photos/{photoId}")
     public ResponseEntity<PhotoDetailResult> getPhoto(@AuthUser Long userId, @PathVariable Long photoId) {
         return ResponseEntity.ok(photoQueryService.getPhoto(userId, photoId));
+    }
+
+    @Override
+    @PostMapping("/albums/{albumId}/selfie/uploads")
+    public ResponseEntity<PhotoSelfieUploadResult> createSelfieUpload(
+            @AuthUser Long userId, @PathVariable Long albumId, @RequestBody PhotoSelfieUploadRequest request) {
+        return ResponseEntity.ok(photoCommandService.createSelfieUpload(userId, albumId, request.toCommand()));
+    }
+
+    @Override
+    @GetMapping("/albums/{albumId}/selfie")
+    public ResponseEntity<PhotoSelfieResult> getSelfie(@AuthUser Long userId, @PathVariable Long albumId) {
+        return ResponseEntity.ok(photoQueryService.getSelfie(userId, albumId));
+    }
+
+    @Override
+    @GetMapping("/albums/{albumId}/photos/me")
+    public ResponseEntity<CursorPageResult<PhotoSummaryResult>> getMyPhotos(
+            @AuthUser Long userId, @PathVariable Long albumId, PhotoListRequest request) {
+        return ResponseEntity.ok(photoQueryService.getMyPhotos(userId, albumId, request.cursor(), request.size()));
+    }
+
+    @Override
+    @DeleteMapping("/albums/{albumId}/selfie")
+    public ResponseEntity<Void> deleteSelfie(@AuthUser Long userId, @PathVariable Long albumId) {
+        photoCommandService.deleteSelfie(userId, albumId);
+        return ResponseEntity.noContent().build();
     }
 }

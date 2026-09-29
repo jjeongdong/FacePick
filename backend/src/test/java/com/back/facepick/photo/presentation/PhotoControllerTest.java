@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -17,18 +18,23 @@ import com.back.facepick.photo.application.PhotoCommandService;
 import com.back.facepick.photo.application.PhotoQueryService;
 import com.back.facepick.photo.application.dto.command.PhotoDeleteCommand;
 import com.back.facepick.photo.application.dto.command.PhotoDownloadCommand;
+import com.back.facepick.photo.application.dto.command.PhotoSelfieUploadCommand;
 import com.back.facepick.photo.application.dto.command.PhotoUploadCommand;
 import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDeleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDetailResult;
 import com.back.facepick.photo.application.dto.result.PhotoDownloadResult;
+import com.back.facepick.photo.application.dto.result.PhotoSelfieResult;
+import com.back.facepick.photo.application.dto.result.PhotoSelfieUploadResult;
 import com.back.facepick.photo.application.dto.result.PhotoSummaryResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.FileResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.Status;
+import com.back.facepick.photo.domain.PhotoSelfieStatus;
 import com.back.facepick.photo.domain.PhotoStatus;
 import com.back.facepick.photo.domain.exception.PhotoFileMissingException;
 import com.back.facepick.photo.domain.exception.PhotoNotDeletableException;
+import com.back.facepick.photo.domain.exception.PhotoSelfieNotReadyException;
 import com.back.facepick.photo.domain.exception.PhotoViewNotAlbumMemberException;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -49,6 +55,102 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 @ExtendWith(MockitoExtension.class)
 class PhotoControllerTest {
+
+    @Test
+    @DisplayName("POST /api/albums/{albumId}/selfie/uploads 는 200 과 셀피 업로드 결과")
+    void createSelfieUpload() throws Exception {
+        // given
+        given(photoCommandService.createSelfieUpload(
+                        1L, 10L, new PhotoSelfieUploadCommand(HASH, 1000L, "image/jpeg", true)))
+                .willReturn(new PhotoSelfieUploadResult(
+                        50L,
+                        PhotoSelfieUploadResult.Status.NEW,
+                        "image/jpeg",
+                        "http://storage/upload",
+                        NOW.plusMinutes(15)));
+
+        // when & then
+        mockMvc.perform(post("/api/albums/10/selfie/uploads")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"contentHash\":\"" + HASH
+                                + "\",\"byteSize\":1000,\"contentType\":\"image/jpeg\",\"faceAnalysisConsent\":true}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.photoId").value(50))
+                .andExpect(jsonPath("$.status").value("NEW"))
+                .andExpect(jsonPath("$.uploadUrl").value("http://storage/upload"));
+    }
+
+    @Test
+    @DisplayName("셀피 업로드 요청에 동의 여부가 없으면 400 INVALID_INPUT")
+    void rejectsSelfieUploadWithoutConsentField() throws Exception {
+        // when & then
+        mockMvc.perform(post("/api/albums/10/selfie/uploads")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"contentHash\":\"" + HASH + "\",\"byteSize\":1000,\"contentType\":\"image/jpeg\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+        then(photoCommandService).should(never()).createSelfieUpload(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("셀피 업로드 요청의 해시 형식이 틀리면 400 INVALID_INPUT")
+    void rejectsSelfieUploadWithBadHash() throws Exception {
+        // when & then
+        mockMvc.perform(
+                        post("/api/albums/10/selfie/uploads")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"contentHash\":\"xyz\",\"byteSize\":1000,\"contentType\":\"image/jpeg\",\"faceAnalysisConsent\":true}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+    }
+
+    @Test
+    @DisplayName("GET /api/albums/{albumId}/selfie 는 200 과 등록 상태")
+    void getSelfie() throws Exception {
+        // given
+        given(photoQueryService.getSelfie(1L, 10L))
+                .willReturn(new PhotoSelfieResult(PhotoSelfieStatus.READY, 50L, "http://storage/thumb", 7L));
+
+        // when & then
+        mockMvc.perform(get("/api/albums/10/selfie"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("READY"))
+                .andExpect(jsonPath("$.photoId").value(50))
+                .andExpect(jsonPath("$.personId").value(7));
+    }
+
+    @Test
+    @DisplayName("GET /api/albums/{albumId}/photos/me 는 size 기본 20 으로 내 사진을 준다")
+    void getMyPhotos() throws Exception {
+        // given
+        given(photoQueryService.getMyPhotos(1L, 10L, null, 20)).willReturn(CursorPageResult.empty());
+
+        // when & then
+        mockMvc.perform(get("/api/albums/10/photos/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hasNext").value(false));
+    }
+
+    @Test
+    @DisplayName("셀피 등록이 끝나지 않았으면 내 사진은 409 PHOTO_SELFIE_NOT_READY")
+    void getMyPhotosBeforeSelfieReady() throws Exception {
+        // given
+        given(photoQueryService.getMyPhotos(1L, 10L, null, 20)).willThrow(new PhotoSelfieNotReadyException());
+
+        // when & then
+        mockMvc.perform(get("/api/albums/10/photos/me"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PHOTO_SELFIE_NOT_READY"));
+    }
+
+    @Test
+    @DisplayName("DELETE /api/albums/{albumId}/selfie 는 204")
+    void deleteSelfie() throws Exception {
+        // when & then
+        mockMvc.perform(delete("/api/albums/10/selfie")).andExpect(status().isNoContent());
+        then(photoCommandService).should().deleteSelfie(1L, 10L);
+    }
 
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 9, 1, 12, 0);
     private static final String HASH = "a".repeat(64);
