@@ -2,7 +2,9 @@ package com.back.facepick.photo.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.groups.Tuple.tuple;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -12,7 +14,9 @@ import static org.mockito.Mockito.never;
 import com.back.facepick.album.application.AlbumQueryApi;
 import com.back.facepick.album.application.dto.api.AlbumInfo;
 import com.back.facepick.global.response.CursorPageResult;
+import com.back.facepick.photo.application.dto.command.PhotoDownloadCommand;
 import com.back.facepick.photo.application.dto.result.PhotoDetailResult;
+import com.back.facepick.photo.application.dto.result.PhotoDownloadResult;
 import com.back.facepick.photo.application.dto.result.PhotoSummaryResult;
 import com.back.facepick.photo.domain.Photo;
 import com.back.facepick.photo.domain.PhotoCursor;
@@ -240,6 +244,65 @@ class PhotoQueryServiceTest {
             assertThatThrownBy(() -> photoQueryService.getPhoto(USER_ID, 12L))
                     .isInstanceOf(PhotoViewNotAlbumMemberException.class);
             then(photoStorage).should(never()).createDownloadUrl(anyString(), anyString());
+        }
+    }
+
+    @Nested
+    @DisplayName("사진 여러 장 다운로드")
+    class GetDownloads {
+
+        @Test
+        @DisplayName("찾은 사진마다 첨부 파일명을 넣은 원본 URL 을 준다")
+        void returnsOriginalUrls() {
+            // given
+            allowView(ALBUM_ID);
+            Photo first = PhotoFixture.processed(12L, ALBUM_ID, USER_ID, hash(1));
+            Photo second = PhotoFixture.uploaded(15L, ALBUM_ID, 2L, hash(2));
+            given(photoRepository.findUploadedByAlbumIdAndIds(ALBUM_ID, List.of(12L, 15L, 999L)))
+                    .willReturn(List.of(first, second));
+            given(photoStorage.downloadUrlExpiry()).willReturn(Duration.ofMinutes(60));
+            given(photoStorage.createDownloadUrl(anyString(), anyString()))
+                    .willAnswer(invocation -> URI.create("http://storage/original?name=" + invocation.getArgument(1))
+                            .toURL());
+
+            // when
+            PhotoDownloadResult result = photoQueryService.getDownloads(
+                    USER_ID, ALBUM_ID, new PhotoDownloadCommand(List.of(12L, 15L, 999L)));
+
+            // then
+            assertThat(result.photos())
+                    .extracting(PhotoDownloadResult.Item::photoId, PhotoDownloadResult.Item::fileName)
+                    .containsExactly(tuple(12L, "facepick-12.jpg"), tuple(15L, "facepick-15.jpg"));
+            assertThat(result.photos().getFirst().originalUrl())
+                    .isEqualTo("http://storage/original?name=facepick-12.jpg");
+            assertThat(result.urlExpiresAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("참여자가 아니면 PhotoViewNotAlbumMemberException, 사진을 조회하지 않는다")
+        void rejectsNonMember() {
+            // given
+            given(albumQueryApi.getInfo(ALBUM_ID)).willReturn(new AlbumInfo(ALBUM_ID, 99L, FAR_FUTURE));
+            given(albumQueryApi.isMember(ALBUM_ID, USER_ID)).willReturn(false);
+
+            // when & then
+            assertThatThrownBy(() ->
+                            photoQueryService.getDownloads(USER_ID, ALBUM_ID, new PhotoDownloadCommand(List.of(12L))))
+                    .isInstanceOf(PhotoViewNotAlbumMemberException.class);
+            then(photoRepository).should(never()).findUploadedByAlbumIdAndIds(anyLong(), anyList());
+        }
+
+        @Test
+        @DisplayName("만료된 앨범이면 PhotoViewAlbumExpiredException")
+        void rejectsExpiredAlbum() {
+            // given
+            given(albumQueryApi.getInfo(ALBUM_ID)).willReturn(new AlbumInfo(ALBUM_ID, 99L, PAST));
+            given(albumQueryApi.isMember(ALBUM_ID, USER_ID)).willReturn(true);
+
+            // when & then
+            assertThatThrownBy(() ->
+                            photoQueryService.getDownloads(USER_ID, ALBUM_ID, new PhotoDownloadCommand(List.of(12L))))
+                    .isInstanceOf(PhotoViewAlbumExpiredException.class);
         }
     }
 

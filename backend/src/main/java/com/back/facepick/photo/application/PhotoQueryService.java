@@ -3,7 +3,9 @@ package com.back.facepick.photo.application;
 import com.back.facepick.album.application.AlbumQueryApi;
 import com.back.facepick.album.application.dto.api.AlbumInfo;
 import com.back.facepick.global.response.CursorPageResult;
+import com.back.facepick.photo.application.dto.command.PhotoDownloadCommand;
 import com.back.facepick.photo.application.dto.result.PhotoDetailResult;
+import com.back.facepick.photo.application.dto.result.PhotoDownloadResult;
 import com.back.facepick.photo.application.dto.result.PhotoSummaryResult;
 import com.back.facepick.photo.domain.Photo;
 import com.back.facepick.photo.domain.PhotoCursor;
@@ -64,6 +66,22 @@ public class PhotoQueryService {
                 .createDownloadUrl(photo.getStorageKey(), photo.downloadFileName())
                 .toString();
         return PhotoDetailResult.of(photo, previewUrl, originalUrl, now.plus(photoStorage.downloadUrlExpiry()));
+    }
+
+    @Transactional(readOnly = true)
+    public PhotoDownloadResult getDownloads(Long userId, Long albumId, PhotoDownloadCommand command) {
+        LocalDateTime now = LocalDateTime.now();
+        validateViewable(userId, albumId, now);
+
+        List<PhotoDownloadResult.Item> photos =
+                photoRepository.findUploadedByAlbumIdAndIds(albumId, command.photoIds()).stream()
+                        .map(photo -> PhotoDownloadResult.Item.of(
+                                photo,
+                                photoStorage
+                                        .createDownloadUrl(photo.getStorageKey(), photo.downloadFileName())
+                                        .toString()))
+                        .toList();
+        return new PhotoDownloadResult(photos, now.plus(photoStorage.downloadUrlExpiry()));
     }
 
     // 없는 앨범이면 getInfo 가 album BC 의 404 를 던진다 (참여 여부보다 먼저).
