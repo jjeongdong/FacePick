@@ -1,6 +1,7 @@
 // 업로드 부하 측정 (S1·S2·S4). 사용법은 README.md.
 import http from 'k6/http';
 import { check, fail, sleep } from 'k6';
+import { open as openFile, SeekMode } from 'k6/experimental/fs';
 import { Rate, Trend } from 'k6/metrics';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8081';
@@ -13,12 +14,24 @@ const manifest = JSON.parse(open('./photos/manifest.json'));
 if (manifest.length < VUS * PER_VU) {
   throw new Error(`사진이 ${VUS * PER_VU}장 필요한데 ${manifest.length}장뿐입니다. prepare_photos.py 로 더 만드세요.`);
 }
-// init 코드는 VU 마다 따로 돈다. 모든 파일을 열면 메모리가 VU 수만큼 곱해지므로 자기 몫만 연다 (__VU 0 은 setup).
-const myFiles = __VU === 0
-  ? []
-  : manifest
-      .slice((__VU - 1) * PER_VU, __VU * PER_VU)
-      .map((entry) => Object.assign({}, entry, { body: open(`./photos/${entry.file}`, 'b') }));
+// open() 은 init 에서 모든 VU 가 같은 파일을 열어야 하고 VU 마다 메모리에 복사한다.
+// fs 모듈은 파일 내용을 VU 사이에 한 벌만 두므로 100장 × VU 수만큼 메모리가 불어나지 않는다.
+const photos = await Promise.all(
+  manifest.slice(0, VUS * PER_VU).map(async (entry) =>
+    Object.assign({}, entry, { handle: await openFile(`./photos/${entry.file}`) })),
+);
+
+async function readAll(handle, size) {
+  const buffer = new Uint8Array(size);
+  await handle.seek(0, SeekMode.Start);
+  let offset = 0;
+  while (offset < size) {
+    const read = await handle.read(buffer.subarray(offset));
+    if (read === null) break;
+    offset += read;
+  }
+  return buffer.buffer;
+}
 
 const completeDuration = new Trend('complete_duration', true);
 const completeOk = new Rate('complete_ok');
@@ -72,8 +85,9 @@ function complete(photoId, token) {
   });
 }
 
-export default function (data) {
+export default async function (data) {
   const token = data.tokens[(__VU - 1) % USERS];
+  const myFiles = photos.slice((__VU - 1) * PER_VU, __VU * PER_VU);
   const startedAt = Date.now();
   const uploads = api('POST', `/api/albums/${data.albumId}/photos/uploads`, {
     files: myFiles.map((f) => ({ contentHash: f.sha256, byteSize: f.size, contentType: 'image/jpeg' })),
@@ -85,7 +99,7 @@ export default function (data) {
   for (const f of myFiles) {
     const target = byHash[f.sha256];
     if (target.status === 'UPLOAD_REQUIRED') {
-      const put = http.put(target.uploadUrl, f.body, {
+      const put = http.put(target.uploadUrl, await readAll(f.handle, f.size), {
         headers: { 'Content-Type': 'image/jpeg' },
         tags: { name: 'storage-put' },
       });
