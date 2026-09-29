@@ -123,3 +123,11 @@ def test_photo_exists(repository, insert_photo, unique_album_id):
 
     assert repository.photo_exists(photo_id)
     assert not repository.photo_exists(photo_id + 1_000_000_000)
+
+
+def test_photo_exists_inside_transaction(repository, insert_photo, unique_album_id):
+    photo_id = insert_photo(unique_album_id)
+
+    with repository.album_transaction(unique_album_id) as album:
+        assert album.photo_exists(photo_id)
+        assert not album.photo_exists(photo_id + 1_000_000_000)

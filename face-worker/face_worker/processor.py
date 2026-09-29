@@ -45,6 +45,11 @@ class FaceProcessor:
             if album.is_analyzed(message.photo_id):
                 log.info("다른 워커가 먼저 분석했다: photoId=%s", message.photo_id)
                 return
+            # 검출하는 사이 사진이 삭제됐을 수 있다. 백엔드는 같은 앨범 잠금을 잡고 얼굴을 지우므로
+            # 잠금 안에서 확인하면, 삭제가 먼저 커밋된 경우를 빠짐없이 걸러 낸다.
+            if not album.photo_exists(message.photo_id):
+                log.info("분석 중 삭제된 사진이라 건너뛴다: photoId=%s", message.photo_id)
+                return
             person_ids = assign_faces(
                 album, message.photo_id, faces, self._settings.threshold, self._settings.knn_k
             )
