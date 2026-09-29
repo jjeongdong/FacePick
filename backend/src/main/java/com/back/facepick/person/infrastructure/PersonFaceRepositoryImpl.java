@@ -1,10 +1,12 @@
 package com.back.facepick.person.infrastructure;
 
 import com.back.facepick.person.domain.PersonFaceRepository;
+import com.back.facepick.person.domain.PhotoFaceAnalysis;
 import jakarta.persistence.EntityManager;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
@@ -79,5 +81,40 @@ public class PersonFaceRepositoryImpl implements PersonFaceRepository {
                 .createNativeQuery("DELETE FROM persons WHERE person_id IN (:personIds) AND cover_face_id IS NULL")
                 .setParameter("personIds", personIds)
                 .executeUpdate();
+    }
+
+    @Override
+    public Optional<PhotoFaceAnalysis> findPhotoFaceAnalysis(Long photoId) {
+        List<?> rows = entityManager
+                .createNativeQuery(
+                        """
+                        SELECT a.face_count,
+                               (SELECT f.person_id FROM faces f WHERE f.photo_id = a.photo_id
+                                ORDER BY f.face_id LIMIT 1)
+                        FROM face_analyses a
+                        WHERE a.photo_id = :photoId
+                        """)
+                .setParameter("photoId", photoId)
+                .getResultList();
+        return rows.stream().findFirst().map(row -> {
+            Object[] columns = (Object[]) row;
+            Long personId = columns[1] == null ? null : ((Number) columns[1]).longValue();
+            return new PhotoFaceAnalysis(((Number) columns[0]).intValue(), personId);
+        });
+    }
+
+    @Override
+    public List<Long> findPhotoIdsOfPerson(Long albumId, Long personId) {
+        List<?> rows = entityManager
+                .createNativeQuery(
+                        """
+                        SELECT DISTINCT photo_id FROM faces
+                        WHERE album_id = :albumId AND person_id = :personId
+                        ORDER BY photo_id
+                        """)
+                .setParameter("albumId", albumId)
+                .setParameter("personId", personId)
+                .getResultList();
+        return rows.stream().map(row -> ((Number) row).longValue()).toList();
     }
 }

@@ -3,6 +3,7 @@ package com.back.facepick.person.domain;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 // face-worker(Python)가 쓰는 faces·persons·face_analyses 를 사진 삭제에 맞춰 정리한다.
 public interface PersonFaceRepository {
@@ -20,4 +21,10 @@ public interface PersonFaceRepository {
 
     // 대표 얼굴이 빈 인물은 남은 얼굴 중 det_score 최고(동점이면 face_id 작은 것)로 채우고, 남은 얼굴이 없으면 지운다.
     void cleanUpPersons(Collection<Long> personIds, LocalDateTime now);
+
+    // 분석 표시가 없으면(분석 전) empty.
+    Optional<PhotoFaceAnalysis> findPhotoFaceAnalysis(Long photoId);
+
+    // 이 앨범에서 그 인물의 얼굴이 있는 사진 ID. 중복 없이 오름차순.
+    List<Long> findPhotoIdsOfPerson(Long albumId, Long personId);
 }
