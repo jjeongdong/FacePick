@@ -10,6 +10,7 @@ import com.back.facepick.photo.domain.PhotoCursor;
 import com.back.facepick.photo.domain.exception.PhotoNotFoundException;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -273,5 +274,132 @@ class PhotoRepositoryImplQueryTest {
                         + " WHERE photo_id = :photoId")
                 .setParameter("photoId", photoId)
                 .executeUpdate();
+    }
+
+    @Test
+    @DisplayName("셀피 제외 - 사진 목록 첫 페이지·다음 페이지에 셀피가 나오지 않는다")
+    void listExcludesSelfie() {
+        // given
+        Photo album = uploaded(1L, hash(1), T.minusHours(1));
+        Photo selfie = uploadedSelfie(1L, 1L, hash(2), T);
+        photoRepository.saveAll(List.of(album, selfie));
+        flushAndClear();
+
+        // when
+        List<Photo> firstPage = photoRepository.findUploadedByAlbumId(1L, 10);
+        List<Photo> afterSelfie =
+                photoRepository.findUploadedByAlbumIdAfter(1L, new PhotoCursor(T.plusHours(1), Long.MAX_VALUE), 10);
+
+        // then
+        assertThat(firstPage).extracting(Photo::getId).containsExactly(album.getId());
+        assertThat(afterSelfie).extracting(Photo::getId).containsExactly(album.getId());
+    }
+
+    @Test
+    @DisplayName("셀피 제외 - 업로드 사진 단건 조회에서 셀피는 PhotoNotFoundException")
+    void uploadedByIdExcludesSelfie() {
+        // given
+        Photo selfie = uploadedSelfie(1L, 1L, hash(1), T);
+        photoRepository.saveAll(List.of(selfie));
+        flushAndClear();
+
+        // when & then
+        assertThatThrownBy(() -> photoRepository.getUploadedById(selfie.getId()))
+                .isInstanceOf(PhotoNotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("셀피 제외 - 다운로드·삭제용 ID 조회와 해시 조회에 셀피가 나오지 않는다")
+    void idAndHashQueriesExcludeSelfie() {
+        // given
+        Photo album = uploaded(1L, hash(1), T);
+        Photo selfie = uploadedSelfie(1L, 1L, hash(1), T);
+        photoRepository.saveAll(List.of(album, selfie));
+        flushAndClear();
+        List<Long> ids = List.of(album.getId(), selfie.getId());
+
+        // when & then
+        assertThat(photoRepository.findUploadedByAlbumIdAndIds(1L, ids))
+                .extracting(Photo::getId)
+                .containsExactly(album.getId());
+        assertThat(photoRepository.findAllByAlbumIdAndIds(1L, ids))
+                .extracting(Photo::getId)
+                .containsExactly(album.getId());
+        assertThat(photoRepository.findAllByAlbumIdAndContentHashes(1L, List.of(hash(1))))
+                .extracting(Photo::getId)
+                .containsExactly(album.getId());
+    }
+
+    @Test
+    @DisplayName("셀피 조회 - 이 앨범·이 멤버의 셀피만, 상태와 관계없이 준다")
+    void findsSelfieOfMember() {
+        // given
+        Photo mine = Photo.createSelfie(1L, 1L, hash(1), 1000L, "image/jpeg", true);
+        photoRepository.saveAll(List.of(
+                mine,
+                uploadedSelfie(1L, 2L, hash(2), T),
+                uploadedSelfie(2L, 1L, hash(3), T),
+                uploaded(1L, hash(4), T)));
+        flushAndClear();
+
+        // when
+        Optional<Photo> found = photoRepository.findSelfie(1L, 1L);
+        Optional<Photo> locked = photoRepository.findSelfieForUpdate(1L, 1L);
+
+        // then
+        assertThat(found).map(Photo::getId).contains(mine.getId());
+        assertThat(locked).map(Photo::getId).contains(mine.getId());
+        assertThat(photoRepository.findSelfie(1L, 3L)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("ID 목록 페이지 조회 - 목록에 있는 이 앨범의 업로드 완료 앨범 사진만 최신 순으로, 커서로 이어진다")
+    void pagesThroughGivenIds() {
+        // given
+        Photo newest = uploaded(1L, hash(1), T);
+        Photo middle = uploaded(1L, hash(2), T.minusHours(1));
+        Photo oldest = uploaded(1L, hash(3), T.minusHours(2));
+        Photo notInList = uploaded(1L, hash(4), T.plusHours(1));
+        Photo pending = Photo.create(1L, 1L, hash(5), 1000L, "image/jpeg");
+        Photo selfie = uploadedSelfie(1L, 1L, hash(6), T.plusHours(2));
+        Photo otherAlbum = uploaded(2L, hash(7), T.plusHours(3));
+        photoRepository.saveAll(List.of(newest, middle, oldest, notInList, pending, selfie, otherAlbum));
+        flushAndClear();
+        List<Long> ids = List.of(
+                newest.getId(), middle.getId(), oldest.getId(), pending.getId(), selfie.getId(), otherAlbum.getId());
+
+        // when
+        List<Photo> firstPage = photoRepository.findUploadedByAlbumIdIn(1L, ids, 2);
+        List<Photo> nextPage =
+                photoRepository.findUploadedByAlbumIdInAfter(1L, ids, PhotoCursor.from(firstPage.getLast()), 2);
+
+        // then
+        assertThat(firstPage).extracting(Photo::getId).containsExactly(newest.getId(), middle.getId());
+        assertThat(nextPage).extracting(Photo::getId).containsExactly(oldest.getId());
+    }
+
+    @Test
+    @DisplayName("바로 삭제 - 같은 트랜잭션에서 같은 멤버의 새 셀피를 넣을 수 있게 DELETE 를 먼저 보낸다")
+    void deletesBeforeNextInsert() {
+        // given
+        Photo old = Photo.createSelfie(1L, 1L, hash(1), 1000L, "image/jpeg", true);
+        photoRepository.saveAll(List.of(old));
+        entityManager.flush();
+
+        // when
+        photoRepository.deleteAndFlush(old);
+        photoRepository.saveAll(List.of(Photo.createSelfie(1L, 1L, hash(2), 1000L, "image/jpeg", true)));
+        entityManager.flush();
+
+        // then
+        assertThat(photoRepository.findSelfie(1L, 1L))
+                .map(Photo::getContentHash)
+                .contains(hash(2));
+    }
+
+    private static Photo uploadedSelfie(Long albumId, Long uploaderId, String hash, LocalDateTime uploadedAt) {
+        Photo photo = Photo.createSelfie(albumId, uploaderId, hash, 1000L, "image/jpeg", true);
+        photo.complete(uploaderId, 1000L, uploadedAt);
+        return photo;
     }
 }

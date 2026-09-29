@@ -10,6 +10,9 @@ from face_worker.storage import PreviewStorage
 
 log = logging.getLogger(__name__)
 
+# 셀피("내 사진 등록")는 photos.purpose 로 구분한다 (백엔드 PhotoPurpose).
+SELFIE_PURPOSE = "SELFIE"
+
 
 class FaceProcessor:
     def __init__(
@@ -47,9 +50,14 @@ class FaceProcessor:
                 return
             # 검출하는 사이 사진이 삭제됐을 수 있다. 백엔드는 같은 앨범 잠금을 잡고 얼굴을 지우므로
             # 잠금 안에서 확인하면, 삭제가 먼저 커밋된 경우를 빠짐없이 걸러 낸다.
-            if not album.photo_exists(message.photo_id):
+            purpose = album.photo_purpose(message.photo_id)
+            if purpose is None:
                 log.info("분석 중 삭제된 사진이라 건너뛴다: photoId=%s", message.photo_id)
                 return
+            if purpose == SELFIE_PURPOSE and faces:
+                # 셀피는 찍는 사람이 가장 크게 나온다.
+                # 뒤에 찍힌 다른 사람 얼굴은 인물 묶기에 넣지 않는다.
+                faces = [max(faces, key=lambda face: face.short_side())]
             person_ids = assign_faces(
                 album, message.photo_id, faces, self._settings.threshold, self._settings.knn_k
             )

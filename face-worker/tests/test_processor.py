@@ -13,21 +13,23 @@ ALBUM_ID = 3
 
 
 class FakeAlbum(InMemoryAlbum):
-    def __init__(self, analyzed: set[int], existing_photo_ids: set[int]):
+    def __init__(self, analyzed: set[int], purposes: dict[int, str]):
         super().__init__()
         self._analyzed = analyzed
-        self._existing_photo_ids = existing_photo_ids
+        self._purposes = purposes
         self.marked: list[tuple[int, int]] = []
         self.face_photo_ids: list[int] = []
+        self.saved_faces: list = []
 
     def is_analyzed(self, photo_id: int) -> bool:
         return photo_id in self._analyzed
 
-    def photo_exists(self, photo_id: int) -> bool:
-        return photo_id in self._existing_photo_ids
+    def photo_purpose(self, photo_id: int) -> str | None:
+        return self._purposes.get(photo_id)
 
     def insert_face(self, photo_id, person_id, face):
         self.face_photo_ids.append(photo_id)
+        self.saved_faces.append(face)
         return super().insert_face(photo_id, person_id, face)
 
     def mark_analyzed(self, photo_id: int, face_count: int) -> None:
@@ -36,10 +38,15 @@ class FakeAlbum(InMemoryAlbum):
 
 
 class FakeRepository:
-    def __init__(self, existing_photo_ids: set[int]):
+    def __init__(
+        self, existing_photo_ids: set[int], selfie_photo_ids: frozenset[int] = frozenset()
+    ):
         self.analyzed: set[int] = set()
-        self.existing_photo_ids = existing_photo_ids
-        self.album = FakeAlbum(self.analyzed, self.existing_photo_ids)
+        self.purposes = {
+            photo_id: "SELFIE" if photo_id in selfie_photo_ids else "ALBUM"
+            for photo_id in existing_photo_ids
+        }
+        self.album = FakeAlbum(self.analyzed, self.purposes)
         # 바깥 확인과 트랜잭션 안 확인 사이에 다른 워커가 끝낸 상황을 흉내 낸다.
         self.analyzed_by_other_worker: set[int] = set()
         # 바깥 확인과 트랜잭션 안 확인 사이(검출 중)에 사진이 삭제된 상황을 흉내 낸다.
@@ -49,12 +56,13 @@ class FakeRepository:
         return photo_id in self.analyzed
 
     def photo_exists(self, photo_id):
-        return photo_id in self.existing_photo_ids
+        return photo_id in self.purposes
 
     @contextmanager
     def album_transaction(self, album_id):
         self.analyzed |= self.analyzed_by_other_worker
-        self.existing_photo_ids -= self.deleted_during_detection
+        for photo_id in self.deleted_during_detection:
+            self.purposes.pop(photo_id, None)
         yield self.album
 
 
@@ -172,6 +180,37 @@ def test_photo_deleted_during_detection_is_not_saved(unit_face):
 
     assert repository.album.face_photo_ids == []
     assert repository.album.marked == []
+
+
+def test_selfie_keeps_only_largest_face(unit_face):
+    repository = FakeRepository({1}, selfie_photo_ids=frozenset({1}))
+    detector = FakeDetector(
+        [[unit_face(1, 0, size=60), unit_face(0, 1, size=200), unit_face(1, 1, size=90)]]
+    )
+
+    processor(repository, FakeStorage(), detector).handle(message(1))
+
+    assert [face.short_side() for face in repository.album.saved_faces] == [200]
+    assert repository.album.marked == [(1, 1)]
+
+
+def test_selfie_without_usable_face_is_marked_with_zero(unit_face):
+    repository = FakeRepository({1}, selfie_photo_ids=frozenset({1}))
+    detector = FakeDetector([[unit_face(1, 0, size=30)]])
+
+    processor(repository, FakeStorage(), detector).handle(message(1))
+
+    assert repository.album.saved_faces == []
+    assert repository.album.marked == [(1, 0)]
+
+
+def test_album_photo_keeps_all_faces(unit_face):
+    repository = FakeRepository({1})
+    detector = FakeDetector([[unit_face(1, 0, size=60), unit_face(0, 1, size=200)]])
+
+    processor(repository, FakeStorage(), detector).handle(message(1))
+
+    assert repository.album.marked == [(1, 2)]
 
 
 def test_missing_preview_is_permanent_failure():

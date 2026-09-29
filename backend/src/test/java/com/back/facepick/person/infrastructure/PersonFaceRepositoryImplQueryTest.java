@@ -7,8 +7,10 @@ import static com.back.facepick.person.fixture.FaceFixture.setCover;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.back.facepick.global.config.data.JpaAuditingConfig;
+import com.back.facepick.person.domain.PhotoFaceAnalysis;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -162,6 +164,62 @@ class PersonFaceRepositoryImplQueryTest {
                         Long.class,
                         ALBUM_ID))
                 .isOne();
+    }
+
+    @Test
+    @DisplayName("사진 얼굴 조회 - 분석 표시가 없으면 empty")
+    void emptyWhenNotAnalyzed() {
+        // when & then
+        assertThat(personFaceRepository.findPhotoFaceAnalysis(10L)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("사진 얼굴 조회 - 얼굴이 없으면 얼굴 0개, 인물 없음")
+    void noFaceAnalysis() {
+        // given
+        jdbcTemplate.update(
+                "INSERT INTO face_analyses (photo_id, album_id, face_count, analyzed_at) VALUES (10, ?, 0, now())",
+                ALBUM_ID);
+
+        // when
+        Optional<PhotoFaceAnalysis> analysis = personFaceRepository.findPhotoFaceAnalysis(10L);
+
+        // then
+        assertThat(analysis).contains(new PhotoFaceAnalysis(0, null));
+    }
+
+    @Test
+    @DisplayName("사진 얼굴 조회 - 얼굴이 있으면 그 얼굴의 인물")
+    void faceAnalysisWithPerson() {
+        // given
+        Long person = insertPerson(jdbcTemplate, ALBUM_ID);
+        insertFace(jdbcTemplate, ALBUM_ID, 10L, person, 0.9);
+        insertAnalysis(jdbcTemplate, ALBUM_ID, 10L);
+
+        // when
+        Optional<PhotoFaceAnalysis> analysis = personFaceRepository.findPhotoFaceAnalysis(10L);
+
+        // then
+        assertThat(analysis).contains(new PhotoFaceAnalysis(1, person));
+    }
+
+    @Test
+    @DisplayName("인물 사진 조회 - 이 앨범에서 그 인물의 얼굴이 있는 사진만 중복 없이")
+    void findsPhotoIdsOfPerson() {
+        // given
+        Long me = insertPerson(jdbcTemplate, ALBUM_ID);
+        Long other = insertPerson(jdbcTemplate, ALBUM_ID);
+        insertFace(jdbcTemplate, ALBUM_ID, 10L, me, 0.9);
+        insertFace(jdbcTemplate, ALBUM_ID, 10L, me, 0.8);
+        insertFace(jdbcTemplate, ALBUM_ID, 11L, me, 0.9);
+        insertFace(jdbcTemplate, ALBUM_ID, 12L, other, 0.9);
+        insertFace(jdbcTemplate, OTHER_ALBUM_ID, 13L, me, 0.9);
+
+        // when
+        List<Long> photoIds = personFaceRepository.findPhotoIdsOfPerson(ALBUM_ID, me);
+
+        // then
+        assertThat(photoIds).containsExactly(10L, 11L);
     }
 
     private List<Long> faceIds(Long albumId) {

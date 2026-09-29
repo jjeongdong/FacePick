@@ -45,6 +45,11 @@ def _photo_exists(conn: psycopg.Connection, photo_id: int) -> bool:
     return row is not None
 
 
+def _photo_purpose(conn: psycopg.Connection, photo_id: int) -> str | None:
+    row = conn.execute("SELECT purpose FROM photos WHERE photo_id = %s", (photo_id,)).fetchone()
+    return None if row is None else row[0]
+
+
 class AlbumTransaction:
     """한 앨범에 대한 저장 트랜잭션. AlbumFaces 규약을 DB 로 구현한다."""
 
@@ -56,8 +61,8 @@ class AlbumTransaction:
     def is_analyzed(self, photo_id: int) -> bool:
         return _is_analyzed(self._conn, photo_id)
 
-    def photo_exists(self, photo_id: int) -> bool:
-        return _photo_exists(self._conn, photo_id)
+    def photo_purpose(self, photo_id: int) -> str | None:
+        return _photo_purpose(self._conn, photo_id)
 
     def nearest_faces(self, embedding: np.ndarray, k: int) -> list[Neighbor]:
         rows = self._conn.execute(

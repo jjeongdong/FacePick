@@ -1,6 +1,7 @@
 package com.back.facepick.photo.infrastructure;
 
 import com.back.facepick.photo.domain.Photo;
+import com.back.facepick.photo.domain.PhotoPurpose;
 import com.back.facepick.photo.domain.PhotoStatus;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
@@ -14,12 +15,13 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface PhotoJpaRepository extends JpaRepository<Photo, Long> {
-    List<Photo> findAllByAlbumIdAndContentHashIn(Long albumId, Collection<String> contentHashes);
+    List<Photo> findAllByAlbumIdAndPurposeAndContentHashIn(
+            Long albumId, PhotoPurpose purpose, Collection<String> contentHashes);
 
     // 삭제용 조회라 행을 잠근다. 두 사람이 같은 사진을 동시에 지우면 뒤 요청이 앞 요청의 커밋을 기다렸다가
     // 이미 지워진 행을 결과에서 빼므로, 0행 DELETE 로 500 이 나지 않고 스펙대로 건너뛴다.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    List<Photo> findAllByAlbumIdAndIdIn(Long albumId, Collection<Long> photoIds);
+    List<Photo> findAllByAlbumIdAndPurposeAndIdIn(Long albumId, PhotoPurpose purpose, Collection<Long> photoIds);
 
     boolean existsByStorageKey(String storageKey);
 
@@ -28,6 +30,7 @@ public interface PhotoJpaRepository extends JpaRepository<Photo, Long> {
             select p from Photo p
             where p.albumId = :albumId and p.id in :photoIds
               and p.status = com.back.facepick.photo.domain.PhotoStatus.UPLOADED
+              and p.purpose = com.back.facepick.photo.domain.PhotoPurpose.ALBUM
             order by p.id
             """)
     List<Photo> findUploadedByAlbumIdAndIdIn(
@@ -39,6 +42,7 @@ public interface PhotoJpaRepository extends JpaRepository<Photo, Long> {
             """
             select p from Photo p
             where p.albumId = :albumId and p.status = com.back.facepick.photo.domain.PhotoStatus.UPLOADED
+              and p.purpose = com.back.facepick.photo.domain.PhotoPurpose.ALBUM
             order by p.uploadedAt desc, p.id desc
             """)
     List<Photo> findUploadedPage(@Param("albumId") Long albumId, Limit limit);
@@ -50,6 +54,7 @@ public interface PhotoJpaRepository extends JpaRepository<Photo, Long> {
             """
             select p from Photo p
             where p.albumId = :albumId and p.status = com.back.facepick.photo.domain.PhotoStatus.UPLOADED
+              and p.purpose = com.back.facepick.photo.domain.PhotoPurpose.ALBUM
               and p.uploadedAt <= :uploadedAt
               and (p.uploadedAt < :uploadedAt or (p.uploadedAt = :uploadedAt and p.id < :photoId))
             order by p.uploadedAt desc, p.id desc
@@ -60,5 +65,57 @@ public interface PhotoJpaRepository extends JpaRepository<Photo, Long> {
             @Param("photoId") Long photoId,
             Limit limit);
 
-    Optional<Photo> findByIdAndStatus(Long photoId, PhotoStatus status);
+    Optional<Photo> findByIdAndStatusAndPurpose(Long photoId, PhotoStatus status, PhotoPurpose purpose);
+
+    Optional<Photo> findByAlbumIdAndUploaderIdAndPurpose(Long albumId, Long uploaderId, PhotoPurpose purpose);
+
+    // 네이티브 쿼리를 쓰는 이유: advisory lock 은 JPQL 로 표현할 수 없다. void 를 돌려줘 FROM 절에서 불러 1 을 받는다.
+    // 두 int 형식이라 face-worker·얼굴 정리의 앨범 잠금(bigint 한 개)과 키 공간이 겹치지 않는다.
+    @Query(
+            value =
+                    """
+                    SELECT 1 FROM pg_advisory_xact_lock(
+                        hashtext('photo-selfie'),
+                        hashtext(CAST(:albumId AS text) || ':' || CAST(:uploaderId AS text)))
+                    """,
+            nativeQuery = true)
+    Integer lockSelfie(@Param("albumId") Long albumId, @Param("uploaderId") Long uploaderId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query(
+            """
+            select p from Photo p
+            where p.albumId = :albumId and p.uploaderId = :uploaderId
+              and p.purpose = com.back.facepick.photo.domain.PhotoPurpose.SELFIE
+            """)
+    Optional<Photo> findSelfieForUpdate(@Param("albumId") Long albumId, @Param("uploaderId") Long uploaderId);
+
+    // "내 사진" 용. 목록 쿼리와 같은 정렬·커서에 photo_id 목록 조건을 더한다.
+    @Query(
+            """
+            select p from Photo p
+            where p.albumId = :albumId and p.id in :photoIds
+              and p.status = com.back.facepick.photo.domain.PhotoStatus.UPLOADED
+              and p.purpose = com.back.facepick.photo.domain.PhotoPurpose.ALBUM
+            order by p.uploadedAt desc, p.id desc
+            """)
+    List<Photo> findUploadedPageIn(
+            @Param("albumId") Long albumId, @Param("photoIds") Collection<Long> photoIds, Limit limit);
+
+    @Query(
+            """
+            select p from Photo p
+            where p.albumId = :albumId and p.id in :photoIds
+              and p.status = com.back.facepick.photo.domain.PhotoStatus.UPLOADED
+              and p.purpose = com.back.facepick.photo.domain.PhotoPurpose.ALBUM
+              and p.uploadedAt <= :uploadedAt
+              and (p.uploadedAt < :uploadedAt or (p.uploadedAt = :uploadedAt and p.id < :photoId))
+            order by p.uploadedAt desc, p.id desc
+            """)
+    List<Photo> findUploadedPageInAfter(
+            @Param("albumId") Long albumId,
+            @Param("photoIds") Collection<Long> photoIds,
+            @Param("uploadedAt") LocalDateTime uploadedAt,
+            @Param("photoId") Long photoId,
+            Limit limit);
 }

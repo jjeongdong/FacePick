@@ -14,14 +14,19 @@ import static org.mockito.Mockito.never;
 import com.back.facepick.album.application.AlbumQueryApi;
 import com.back.facepick.album.application.dto.api.AlbumInfo;
 import com.back.facepick.global.response.CursorPageResult;
+import com.back.facepick.person.application.PersonQueryApi;
+import com.back.facepick.person.application.dto.api.PhotoFaceInfo;
 import com.back.facepick.photo.application.dto.command.PhotoDownloadCommand;
 import com.back.facepick.photo.application.dto.result.PhotoDetailResult;
 import com.back.facepick.photo.application.dto.result.PhotoDownloadResult;
+import com.back.facepick.photo.application.dto.result.PhotoSelfieResult;
 import com.back.facepick.photo.application.dto.result.PhotoSummaryResult;
 import com.back.facepick.photo.domain.Photo;
 import com.back.facepick.photo.domain.PhotoCursor;
 import com.back.facepick.photo.domain.PhotoRepository;
+import com.back.facepick.photo.domain.PhotoSelfieStatus;
 import com.back.facepick.photo.domain.PhotoStorage;
+import com.back.facepick.photo.domain.exception.PhotoSelfieNotReadyException;
 import com.back.facepick.photo.domain.exception.PhotoViewAlbumExpiredException;
 import com.back.facepick.photo.domain.exception.PhotoViewNotAlbumMemberException;
 import com.back.facepick.photo.fixture.PhotoFixture;
@@ -29,6 +34,7 @@ import java.net.URI;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -53,6 +59,9 @@ class PhotoQueryServiceTest {
 
     @Mock
     private AlbumQueryApi albumQueryApi;
+
+    @Mock
+    private PersonQueryApi personQueryApi;
 
     @InjectMocks
     private PhotoQueryService photoQueryService;
@@ -303,6 +312,157 @@ class PhotoQueryServiceTest {
             assertThatThrownBy(() ->
                             photoQueryService.getDownloads(USER_ID, ALBUM_ID, new PhotoDownloadCommand(List.of(12L))))
                     .isInstanceOf(PhotoViewAlbumExpiredException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("셀피 상태")
+    class GetSelfie {
+
+        @Test
+        @DisplayName("셀피가 없으면 NONE")
+        void none() {
+            // given
+            allowView(ALBUM_ID);
+            given(photoRepository.findSelfie(ALBUM_ID, USER_ID)).willReturn(Optional.empty());
+
+            // when & then
+            assertThat(photoQueryService.getSelfie(USER_ID, ALBUM_ID)).isEqualTo(PhotoSelfieResult.none());
+        }
+
+        @Test
+        @DisplayName("업로드 전이면 UPLOADING 이고 얼굴을 묻지 않는다")
+        void uploading() {
+            // given
+            allowView(ALBUM_ID);
+            given(photoRepository.findSelfie(ALBUM_ID, USER_ID))
+                    .willReturn(Optional.of(PhotoFixture.pendingSelfie(50L, ALBUM_ID, USER_ID, hash(1))));
+
+            // when
+            PhotoSelfieResult result = photoQueryService.getSelfie(USER_ID, ALBUM_ID);
+
+            // then
+            assertThat(result).isEqualTo(new PhotoSelfieResult(PhotoSelfieStatus.UPLOADING, 50L, null, null));
+            then(personQueryApi).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("분석 전이면 PROCESSING, 썸네일이 있으면 썸네일 URL")
+        void processing() {
+            // given
+            allowView(ALBUM_ID);
+            given(photoRepository.findSelfie(ALBUM_ID, USER_ID))
+                    .willReturn(Optional.of(PhotoFixture.processedSelfie(50L, ALBUM_ID, USER_ID, hash(1))));
+            given(personQueryApi.findPhotoFace(50L)).willReturn(Optional.empty());
+            // getSelfie 는 URL 만료 시각을 주지 않아 stubUrls() 의 만료 스텁이 남는다 (strict stubs).
+            given(photoStorage.createDownloadUrl(anyString()))
+                    .willAnswer(invocation -> URI.create("http://storage/" + invocation.getArgument(0))
+                            .toURL());
+
+            // when
+            PhotoSelfieResult result = photoQueryService.getSelfie(USER_ID, ALBUM_ID);
+
+            // then
+            assertThat(result.status()).isEqualTo(PhotoSelfieStatus.PROCESSING);
+            assertThat(result.thumbnailUrl()).startsWith("http://storage/albums/10/thumbnails/");
+        }
+
+        @Test
+        @DisplayName("분석이 끝났는데 얼굴이 없으면 NO_FACE")
+        void noFace() {
+            // given
+            allowView(ALBUM_ID);
+            given(photoRepository.findSelfie(ALBUM_ID, USER_ID))
+                    .willReturn(Optional.of(PhotoFixture.uploadedSelfie(50L, ALBUM_ID, USER_ID, hash(1))));
+            given(personQueryApi.findPhotoFace(50L)).willReturn(Optional.of(new PhotoFaceInfo(0, null)));
+
+            // when & then
+            assertThat(photoQueryService.getSelfie(USER_ID, ALBUM_ID).status()).isEqualTo(PhotoSelfieStatus.NO_FACE);
+        }
+
+        @Test
+        @DisplayName("인물이 있으면 READY 와 인물 ID")
+        void ready() {
+            // given
+            allowView(ALBUM_ID);
+            given(photoRepository.findSelfie(ALBUM_ID, USER_ID))
+                    .willReturn(Optional.of(PhotoFixture.uploadedSelfie(50L, ALBUM_ID, USER_ID, hash(1))));
+            given(personQueryApi.findPhotoFace(50L)).willReturn(Optional.of(new PhotoFaceInfo(1, 7L)));
+
+            // when
+            PhotoSelfieResult result = photoQueryService.getSelfie(USER_ID, ALBUM_ID);
+
+            // then
+            assertThat(result).isEqualTo(new PhotoSelfieResult(PhotoSelfieStatus.READY, 50L, null, 7L));
+        }
+    }
+
+    @Nested
+    @DisplayName("내 사진")
+    class GetMyPhotos {
+
+        @Test
+        @DisplayName("셀피가 없으면 PhotoSelfieNotReadyException")
+        void rejectsWithoutSelfie() {
+            // given
+            allowView(ALBUM_ID);
+            given(photoRepository.findSelfie(ALBUM_ID, USER_ID)).willReturn(Optional.empty());
+
+            // when & then
+            assertThatThrownBy(() -> photoQueryService.getMyPhotos(USER_ID, ALBUM_ID, null, 20))
+                    .isInstanceOf(PhotoSelfieNotReadyException.class);
+        }
+
+        @Test
+        @DisplayName("셀피에 얼굴이 없으면(NO_FACE) PhotoSelfieNotReadyException")
+        void rejectsNoFace() {
+            // given
+            allowView(ALBUM_ID);
+            given(photoRepository.findSelfie(ALBUM_ID, USER_ID))
+                    .willReturn(Optional.of(PhotoFixture.uploadedSelfie(50L, ALBUM_ID, USER_ID, hash(1))));
+            given(personQueryApi.findPhotoFace(50L)).willReturn(Optional.of(new PhotoFaceInfo(0, null)));
+
+            // when & then
+            assertThatThrownBy(() -> photoQueryService.getMyPhotos(USER_ID, ALBUM_ID, null, 20))
+                    .isInstanceOf(PhotoSelfieNotReadyException.class);
+        }
+
+        @Test
+        @DisplayName("셀피가 업로드 전이면 얼굴을 묻지 않고 PhotoSelfieNotReadyException")
+        void rejectsUploadingSelfie() {
+            // given
+            allowView(ALBUM_ID);
+            given(photoRepository.findSelfie(ALBUM_ID, USER_ID))
+                    .willReturn(Optional.of(PhotoFixture.pendingSelfie(50L, ALBUM_ID, USER_ID, hash(1))));
+
+            // when & then
+            assertThatThrownBy(() -> photoQueryService.getMyPhotos(USER_ID, ALBUM_ID, null, 20))
+                    .isInstanceOf(PhotoSelfieNotReadyException.class);
+            then(personQueryApi).shouldHaveNoInteractions();
+        }
+
+        @Test
+        @DisplayName("내 인물의 사진 ID 로 앨범 사진을 커서 페이징한다")
+        void pagesMyPhotos() {
+            // given
+            allowView(ALBUM_ID);
+            given(photoRepository.findSelfie(ALBUM_ID, USER_ID))
+                    .willReturn(Optional.of(PhotoFixture.uploadedSelfie(50L, ALBUM_ID, USER_ID, hash(1))));
+            given(personQueryApi.findPhotoFace(50L)).willReturn(Optional.of(new PhotoFaceInfo(1, 7L)));
+            given(personQueryApi.getPhotoIdsOfPerson(ALBUM_ID, 7L)).willReturn(List.of(2L, 3L, 50L));
+            Photo third = PhotoFixture.processed(3L, ALBUM_ID, USER_ID, hash(3));
+            Photo second = PhotoFixture.processed(2L, ALBUM_ID, USER_ID, hash(2));
+            given(photoRepository.findUploadedByAlbumIdIn(ALBUM_ID, List.of(2L, 3L, 50L), 2))
+                    .willReturn(List.of(third, second));
+            stubUrls();
+
+            // when
+            CursorPageResult<PhotoSummaryResult> page = photoQueryService.getMyPhotos(USER_ID, ALBUM_ID, null, 1);
+
+            // then
+            assertThat(page.content()).extracting(PhotoSummaryResult::photoId).containsExactly(3L);
+            assertThat(page.hasNext()).isTrue();
+            assertThat(page.nextCursor()).isNotNull();
         }
     }
 

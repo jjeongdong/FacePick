@@ -3,6 +3,8 @@ package com.back.facepick.photo.domain;
 import com.back.facepick.global.persistence.BaseTimeEntity;
 import com.back.facepick.photo.domain.exception.PhotoFileMissingException;
 import com.back.facepick.photo.domain.exception.PhotoNotUploaderException;
+import com.back.facepick.photo.domain.exception.PhotoSelfieConsentRequiredException;
+import com.back.facepick.photo.domain.exception.PhotoSelfieTooLargeException;
 import com.back.facepick.photo.domain.exception.PhotoSizeMismatchException;
 import com.back.facepick.photo.domain.exception.PhotoTooLargeException;
 import com.back.facepick.photo.domain.exception.PhotoUnsupportedTypeException;
@@ -17,6 +19,7 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -36,6 +39,10 @@ public class Photo extends BaseTimeEntity {
             "image/heif", "heif",
             "image/x-adobe-dng", "dng");
     private static final String DOWNLOAD_FILE_PREFIX = "facepick-";
+    // 셀피는 폰 사진이라 이 정도면 충분하고, 워커가 처리하지 못하는 DNG 는 받지 않는다 (받으면 분석 중으로 영원히 남는다).
+    private static final long MAX_SELFIE_BYTE_SIZE = 20L * 1024 * 1024;
+    private static final Set<String> SELFIE_CONTENT_TYPES =
+            Set.of("image/jpeg", "image/png", "image/heic", "image/heif");
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -67,6 +74,10 @@ public class Photo extends BaseTimeEntity {
     @Column(name = "uploaded_at")
     private LocalDateTime uploadedAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private PhotoPurpose purpose;
+
     // 아래는 썸네일 워커(Python)만 쓰는 컬럼이다. JPA 는 UPDATE 때 모든 컬럼을 쓰므로,
     // 백엔드가 사진을 고칠 때 워커가 쓴 값을 옛 값으로 덮지 않게 읽기 전용으로 둔다.
     @Column(name = "thumbnail_key", insertable = false, updatable = false)
@@ -88,7 +99,13 @@ public class Photo extends BaseTimeEntity {
     private LocalDateTime processedAt;
 
     private Photo(
-            Long albumId, Long uploaderId, String contentHash, Long byteSize, String contentType, String storageKey) {
+            Long albumId,
+            Long uploaderId,
+            String contentHash,
+            Long byteSize,
+            String contentType,
+            String storageKey,
+            PhotoPurpose purpose) {
         this.albumId = albumId;
         this.uploaderId = uploaderId;
         this.contentHash = contentHash;
@@ -96,13 +113,55 @@ public class Photo extends BaseTimeEntity {
         this.contentType = contentType;
         this.storageKey = storageKey;
         this.status = PhotoStatus.PENDING;
+        this.purpose = purpose;
     }
 
     public static Photo create(Long albumId, Long uploaderId, String contentHash, Long byteSize, String contentType) {
         validateFile(contentType, byteSize);
-        // 해시는 앨범 안에서 유일하므로 저장 전에 키를 정할 수 있다.
-        String storageKey = "albums/" + albumId + "/originals/" + contentHash;
-        return new Photo(albumId, uploaderId, contentHash, byteSize, contentType, storageKey);
+        return new Photo(
+                albumId,
+                uploaderId,
+                contentHash,
+                byteSize,
+                contentType,
+                originalKey(albumId, contentHash),
+                PhotoPurpose.ALBUM);
+    }
+
+    public static Photo createSelfie(
+            Long albumId,
+            Long uploaderId,
+            String contentHash,
+            Long byteSize,
+            String contentType,
+            boolean faceAnalysisConsent) {
+        validateSelfieFile(contentType, byteSize, faceAnalysisConsent);
+        return new Photo(
+                albumId,
+                uploaderId,
+                contentHash,
+                byteSize,
+                contentType,
+                originalKey(albumId, contentHash),
+                PhotoPurpose.SELFIE);
+    }
+
+    // 같은 셀피를 다시 요청할 때도 검사해야 해서 createSelfie 와 따로 둔다.
+    public static void validateSelfieFile(String contentType, Long byteSize, boolean faceAnalysisConsent) {
+        if (!faceAnalysisConsent) {
+            throw new PhotoSelfieConsentRequiredException();
+        }
+        if (!SELFIE_CONTENT_TYPES.contains(contentType)) {
+            throw new PhotoUnsupportedTypeException();
+        }
+        if (byteSize > MAX_SELFIE_BYTE_SIZE) {
+            throw new PhotoSelfieTooLargeException();
+        }
+    }
+
+    // 해시는 앨범 안에서 파일마다 같으므로 저장 전에 키를 정할 수 있다. 셀피가 앨범 사진과 같은 파일이면 키도 같다.
+    private static String originalKey(Long albumId, String contentHash) {
+        return "albums/" + albumId + "/originals/" + contentHash;
     }
 
     // 이미 등록된 해시를 다시 요청할 때도 선언 값을 검사해야 해서 create 와 따로 둔다.
@@ -113,6 +172,10 @@ public class Photo extends BaseTimeEntity {
         if (byteSize > MAX_BYTE_SIZE) {
             throw new PhotoTooLargeException();
         }
+    }
+
+    public boolean hasFile(String contentHash) {
+        return Objects.equals(this.contentHash, contentHash);
     }
 
     public boolean isUploaded() {

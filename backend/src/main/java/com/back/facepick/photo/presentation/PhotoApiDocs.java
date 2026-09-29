@@ -5,11 +5,14 @@ import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDeleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDetailResult;
 import com.back.facepick.photo.application.dto.result.PhotoDownloadResult;
+import com.back.facepick.photo.application.dto.result.PhotoSelfieResult;
+import com.back.facepick.photo.application.dto.result.PhotoSelfieUploadResult;
 import com.back.facepick.photo.application.dto.result.PhotoSummaryResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
 import com.back.facepick.photo.presentation.dto.request.PhotoDeleteRequest;
 import com.back.facepick.photo.presentation.dto.request.PhotoDownloadRequest;
 import com.back.facepick.photo.presentation.dto.request.PhotoListRequest;
+import com.back.facepick.photo.presentation.dto.request.PhotoSelfieUploadRequest;
 import com.back.facepick.photo.presentation.dto.request.PhotoUploadRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -65,4 +68,29 @@ public interface PhotoApiDocs {
                     + " 앨범 참여자만, 만료된 앨범은 400. 이 앨범에 없거나 업로드 전인 ID 는 건너뛰고 받을 수 있는 사진만 photoId 순으로 돌려줍니다.")
     ResponseEntity<PhotoDownloadResult> getDownloads(
             @Parameter(hidden = true) Long userId, Long albumId, @Valid PhotoDownloadRequest request);
+
+    @Operation(
+            summary = "내 사진(셀피) 업로드 URL 발급",
+            description = "얼굴 분석 동의(faceAnalysisConsent: true)와 함께 셀피 1장을 등록합니다. JPEG·PNG·HEIC·HEIF, 20MB 이하."
+                    + " 서명 URL 로 PUT 한 뒤 업로드 완료 API 를 부릅니다. 이미 등록한 셀피와 다른 파일이면 옛 셀피를 지우고 새로 등록합니다."
+                    + " 같은 파일이면 올리는 중일 때 RESUMED(URL 재발급), 이미 올라갔으면 ALREADY_UPLOADED 입니다."
+                    + " 셀피는 앨범 사진 목록·상세·다운로드에 나오지 않습니다.")
+    ResponseEntity<PhotoSelfieUploadResult> createSelfieUpload(
+            @Parameter(hidden = true) Long userId, Long albumId, @Valid PhotoSelfieUploadRequest request);
+
+    @Operation(
+            summary = "내 사진(셀피) 등록 상태",
+            description = "NONE(미등록), UPLOADING(업로드 중), PROCESSING(얼굴 분석 중), NO_FACE(얼굴을 찾지 못함 — 다시 등록),"
+                    + " READY(등록 완료, personId 가 나) 중 하나입니다. thumbnailUrl 은 썸네일이 만들어진 뒤에만 있습니다.")
+    ResponseEntity<PhotoSelfieResult> getSelfie(@Parameter(hidden = true) Long userId, Long albumId);
+
+    @Operation(
+            summary = "내가 나온 사진 목록",
+            description = "등록한 셀피의 인물이 나온 앨범 사진을 앨범 사진 목록과 같은 방식으로 커서 페이징합니다."
+                    + " 셀피 등록이 READY 가 아니면 409 PHOTO_SELFIE_NOT_READY 입니다.")
+    ResponseEntity<CursorPageResult<PhotoSummaryResult>> getMyPhotos(
+            @Parameter(hidden = true) Long userId, Long albumId, @ParameterObject @Valid PhotoListRequest request);
+
+    @Operation(summary = "내 사진(셀피) 등록 취소", description = "셀피와 그 얼굴 데이터를 지웁니다. 등록한 셀피가 없어도 204 입니다.")
+    ResponseEntity<Void> deleteSelfie(@Parameter(hidden = true) Long userId, Long albumId);
 }
