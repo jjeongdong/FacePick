@@ -58,4 +58,9 @@ public class PhotoRepositoryImpl implements PhotoRepository {
     public void deleteAll(List<Photo> photos) {
         photoJpaRepository.deleteAll(photos);
     }
+
+    @Override
+    public boolean existsByStorageKey(String storageKey) {
+        return photoJpaRepository.existsByStorageKey(storageKey);
+    }
 }

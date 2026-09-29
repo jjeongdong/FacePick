@@ -10,6 +10,7 @@ import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.Mockito.never;
 
+import com.back.facepick.photo.domain.PhotoRepository;
 import com.back.facepick.photo.domain.PhotoStorage;
 import com.back.facepick.photo.domain.PhotoStorageDeletion;
 import com.back.facepick.photo.domain.PhotoStorageDeletionRepository;
@@ -35,13 +36,17 @@ class PhotoStorageCleanerTest {
     private PhotoStorageDeletionRepository photoStorageDeletionRepository;
 
     @Mock
+    private PhotoRepository photoRepository;
+
+    @Mock
     private PhotoStorage photoStorage;
 
     private PhotoStorageCleaner photoStorageCleaner;
 
     @BeforeEach
     void setUp() {
-        photoStorageCleaner = new PhotoStorageCleaner(photoStorageDeletionRepository, photoStorage, 20);
+        photoStorageCleaner =
+                new PhotoStorageCleaner(photoStorageDeletionRepository, photoRepository, photoStorage, 20);
     }
 
     @Test
@@ -102,5 +107,22 @@ class PhotoStorageCleanerTest {
 
         // then
         then(photoStorage).should(never()).deleteObjects(anyList());
+    }
+
+    @Test
+    @DisplayName("지운 뒤 같은 파일을 다시 올린 사진이 있으면 그 파일은 지우지 않고 처리 완료로 표시한다")
+    void keepsFilesOfReuploadedPhoto() {
+        // given
+        PhotoStorageDeletion deletion = PhotoStorageDeletion.create("albums/1/originals/" + HASH_A, T);
+        given(photoStorageDeletionRepository.findDue(any(LocalDateTime.class), eq(100)))
+                .willReturn(List.of(deletion));
+        given(photoRepository.existsByStorageKey(deletion.getStorageKey())).willReturn(true);
+
+        // when
+        photoStorageCleaner.clean();
+
+        // then
+        then(photoStorage).should(never()).deleteObjects(anyList());
+        assertThat(deletion.getDeletedAt()).isNotNull();
     }
 }

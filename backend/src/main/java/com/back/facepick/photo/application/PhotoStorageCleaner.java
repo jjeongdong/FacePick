@@ -1,5 +1,6 @@
 package com.back.facepick.photo.application;
 
+import com.back.facepick.photo.domain.PhotoRepository;
 import com.back.facepick.photo.domain.PhotoStorage;
 import com.back.facepick.photo.domain.PhotoStorageDeletion;
 import com.back.facepick.photo.domain.PhotoStorageDeletionRepository;
@@ -18,14 +19,17 @@ public class PhotoStorageCleaner {
     private static final int BATCH_SIZE = 100;
 
     private final PhotoStorageDeletionRepository photoStorageDeletionRepository;
+    private final PhotoRepository photoRepository;
     private final PhotoStorage photoStorage;
     private final Duration deletionDelay;
 
     public PhotoStorageCleaner(
             PhotoStorageDeletionRepository photoStorageDeletionRepository,
+            PhotoRepository photoRepository,
             PhotoStorage photoStorage,
             @Value("${storage.deletion-delay-minutes}") long deletionDelayMinutes) {
         this.photoStorageDeletionRepository = photoStorageDeletionRepository;
+        this.photoRepository = photoRepository;
         this.photoStorage = photoStorage;
         this.deletionDelay = Duration.ofMinutes(deletionDelayMinutes);
     }
@@ -39,6 +43,12 @@ public class PhotoStorageCleaner {
         LocalDateTime now = LocalDateTime.now();
         for (PhotoStorageDeletion deletion :
                 photoStorageDeletionRepository.findDue(now.minus(deletionDelay), BATCH_SIZE)) {
+            // 저장 키는 파일 내용 해시로 정해져서, 지운 뒤 같은 파일을 다시 올리면 새 사진이 같은 키를 쓴다.
+            // 그 파일은 새 사진의 것이므로 지우지 않는다 (지우면 새 사진이 목록에만 남고 모든 URL 이 404 가 된다).
+            if (photoRepository.existsByStorageKey(deletion.getStorageKey())) {
+                deletion.markDeleted(now);
+                continue;
+            }
             try {
                 photoStorage.deleteObjects(deletion.storageKeys());
             } catch (RuntimeException e) {

@@ -209,6 +209,26 @@ class PhotoRepositoryImplQueryTest {
                 .containsExactly(again.getId());
     }
 
+    @Test
+    @DisplayName("저장 키 존재 확인 - 같은 키의 사진이 있으면 true, 지운 뒤에는 false")
+    void checksStorageKeyExists() {
+        // given
+        Photo photo = uploaded(1L, hash(1), T);
+        photoRepository.saveAll(List.of(photo));
+        flushAndClear();
+        String storageKey = photo.getStorageKey();
+
+        // when
+        boolean existsBefore = photoRepository.existsByStorageKey(storageKey);
+        photoRepository.deleteAll(photoRepository.findAllByAlbumIdAndIds(1L, List.of(photo.getId())));
+        flushAndClear();
+        boolean existsAfter = photoRepository.existsByStorageKey(storageKey);
+
+        // then
+        assertThat(existsBefore).isTrue();
+        assertThat(existsAfter).isFalse();
+    }
+
     private static Photo uploaded(Long albumId, String hash, LocalDateTime uploadedAt) {
         Photo photo = Photo.create(albumId, 1L, hash, 1000L, "image/jpeg");
         photo.complete(1L, 1000L, uploadedAt);

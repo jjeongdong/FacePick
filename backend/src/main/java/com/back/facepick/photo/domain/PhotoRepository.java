@@ -24,4 +24,7 @@ public interface PhotoRepository {
     List<Photo> findAllByAlbumIdAndIds(Long albumId, Collection<Long> photoIds);
 
     void deleteAll(List<Photo> photos);
+
+    // 같은 저장 키(같은 앨범·같은 파일)를 쓰는 사진이 있는지. 상태와 관계없다.
+    boolean existsByStorageKey(String storageKey);
 }
