@@ -18,6 +18,7 @@ import com.back.facepick.photo.domain.PhotoStorageDeletion;
 import com.back.facepick.photo.domain.PhotoStorageDeletionRepository;
 import com.back.facepick.photo.domain.PhotoUploadPolicy;
 import com.back.facepick.photo.domain.event.PhotoUploadedEvent;
+import com.back.facepick.photo.domain.event.PhotosDeletedEvent;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -25,6 +26,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
@@ -37,6 +39,7 @@ public class PhotoCommandService {
     private final PhotoStorageDeletionRepository photoStorageDeletionRepository;
     private final PhotoStorage photoStorage;
     private final AlbumQueryApi albumQueryApi;
+    private final ApplicationEventPublisher eventPublisher;
     private final JsonMapper jsonMapper;
 
     @Transactional
@@ -105,7 +108,12 @@ public class PhotoCommandService {
                 .map(photo -> PhotoStorageDeletion.create(photo.getStorageKey(), now))
                 .toList());
         photoRepository.deleteAll(photos);
-        return PhotoDeleteResult.from(photos);
+        PhotoDeleteResult result = PhotoDeleteResult.from(photos);
+        // person BC 가 같은 트랜잭션에서 이 사진들의 얼굴 데이터를 지운다.
+        if (!photos.isEmpty()) {
+            eventPublisher.publishEvent(new PhotosDeletedEvent(albumId, result.deletedPhotoIds()));
+        }
+        return result;
     }
 
     private FileResult toFileResult(Photo photo) {

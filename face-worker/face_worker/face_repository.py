@@ -21,8 +21,7 @@ class FaceRepository:
 
     def photo_exists(self, photo_id: int) -> bool:
         with psycopg.connect(self._database_url) as conn:
-            row = conn.execute("SELECT 1 FROM photos WHERE photo_id = %s", (photo_id,)).fetchone()
-        return row is not None
+            return _photo_exists(conn, photo_id)
 
     @contextmanager
     def album_transaction(self, album_id: int) -> Iterator["AlbumTransaction"]:
@@ -41,6 +40,11 @@ def _is_analyzed(conn: psycopg.Connection, photo_id: int) -> bool:
     return row is not None
 
 
+def _photo_exists(conn: psycopg.Connection, photo_id: int) -> bool:
+    row = conn.execute("SELECT 1 FROM photos WHERE photo_id = %s", (photo_id,)).fetchone()
+    return row is not None
+
+
 class AlbumTransaction:
     """한 앨범에 대한 저장 트랜잭션. AlbumFaces 규약을 DB 로 구현한다."""
 
@@ -51,6 +55,9 @@ class AlbumTransaction:
 
     def is_analyzed(self, photo_id: int) -> bool:
         return _is_analyzed(self._conn, photo_id)
+
+    def photo_exists(self, photo_id: int) -> bool:
+        return _photo_exists(self._conn, photo_id)
 
     def nearest_faces(self, embedding: np.ndarray, k: int) -> list[Neighbor]:
         rows = self._conn.execute(

@@ -13,14 +13,18 @@ ALBUM_ID = 3
 
 
 class FakeAlbum(InMemoryAlbum):
-    def __init__(self, analyzed: set[int]):
+    def __init__(self, analyzed: set[int], existing_photo_ids: set[int]):
         super().__init__()
         self._analyzed = analyzed
+        self._existing_photo_ids = existing_photo_ids
         self.marked: list[tuple[int, int]] = []
         self.face_photo_ids: list[int] = []
 
     def is_analyzed(self, photo_id: int) -> bool:
         return photo_id in self._analyzed
+
+    def photo_exists(self, photo_id: int) -> bool:
+        return photo_id in self._existing_photo_ids
 
     def insert_face(self, photo_id, person_id, face):
         self.face_photo_ids.append(photo_id)
@@ -35,9 +39,11 @@ class FakeRepository:
     def __init__(self, existing_photo_ids: set[int]):
         self.analyzed: set[int] = set()
         self.existing_photo_ids = existing_photo_ids
-        self.album = FakeAlbum(self.analyzed)
+        self.album = FakeAlbum(self.analyzed, self.existing_photo_ids)
         # 바깥 확인과 트랜잭션 안 확인 사이에 다른 워커가 끝낸 상황을 흉내 낸다.
         self.analyzed_by_other_worker: set[int] = set()
+        # 바깥 확인과 트랜잭션 안 확인 사이(검출 중)에 사진이 삭제된 상황을 흉내 낸다.
+        self.deleted_during_detection: set[int] = set()
 
     def is_analyzed(self, photo_id):
         return photo_id in self.analyzed
@@ -48,6 +54,7 @@ class FakeRepository:
     @contextmanager
     def album_transaction(self, album_id):
         self.analyzed |= self.analyzed_by_other_worker
+        self.existing_photo_ids -= self.deleted_during_detection
         yield self.album
 
 
@@ -150,6 +157,16 @@ def test_deleted_photo_is_skipped_without_download():
 def test_photo_finished_by_other_worker_is_not_saved_twice(unit_face):
     repository = FakeRepository({1})
     repository.analyzed_by_other_worker.add(1)
+
+    processor(repository, FakeStorage(), FakeDetector([[unit_face(1, 0)]])).handle(message(1))
+
+    assert repository.album.face_photo_ids == []
+    assert repository.album.marked == []
+
+
+def test_photo_deleted_during_detection_is_not_saved(unit_face):
+    repository = FakeRepository({1})
+    repository.deleted_during_detection.add(1)
 
     processor(repository, FakeStorage(), FakeDetector([[unit_face(1, 0)]])).handle(message(1))
 
