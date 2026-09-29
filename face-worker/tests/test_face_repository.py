@@ -19,15 +19,17 @@ def count(config, sql: str, album_id: int) -> int:
 def test_saves_person_face_cover_and_analysis_together(
     repository, config, unique_album_id, unit_face, cleanup_faces
 ):
+    # face_analyses.photo_id 는 PK 라 실제 사진 번호와 겹치지 않게 앨범 ID 와 같은 큰 값을 쓴다.
+    photo_id = unique_album_id
     face = unit_face(1, 0, det_score=0.8)
 
     with repository.album_transaction(unique_album_id) as album:
         person_id = album.create_person()
-        face_id = album.insert_face(101, person_id, face)
+        face_id = album.insert_face(photo_id, person_id, face)
         album.update_cover_if_better(person_id, face_id, face.det_score)
-        album.mark_analyzed(101, 1)
+        album.mark_analyzed(photo_id, 1)
 
-    assert repository.is_analyzed(101)
+    assert repository.is_analyzed(photo_id)
     with psycopg.connect(config.database_url) as conn:
         row = conn.execute(
             """
@@ -38,7 +40,7 @@ def test_saves_person_face_cover_and_analysis_together(
             (person_id,),
         ).fetchone()
     assert row[0] == face_id
-    assert row[1:5] == (101, unique_album_id, 10, 110)
+    assert row[1:5] == (photo_id, unique_album_id, 10, 110)
     assert row[5] == pytest.approx(0.8)
 
 
@@ -97,21 +99,23 @@ def test_cover_changes_only_for_better_face(
 
 
 def test_error_rolls_back_everything(repository, config, unique_album_id, unit_face, cleanup_faces):
+    photo_id = unique_album_id
     with pytest.raises(RuntimeError), repository.album_transaction(unique_album_id) as album:
-        album.insert_face(1, album.create_person(), unit_face(1, 0))
-        album.mark_analyzed(1, 1)
+        album.insert_face(photo_id, album.create_person(), unit_face(1, 0))
+        album.mark_analyzed(photo_id, 1)
         raise RuntimeError("저장 도중 끊김")
 
-    assert not repository.is_analyzed(1)
+    assert not repository.is_analyzed(photo_id)
     assert count(config, "SELECT count(*) FROM persons WHERE album_id = %s", unique_album_id) == 0
     assert count(config, "SELECT count(*) FROM faces WHERE album_id = %s", unique_album_id) == 0
 
 
 def test_analysis_is_visible_inside_transaction(repository, unique_album_id, cleanup_faces):
+    photo_id = unique_album_id
     with repository.album_transaction(unique_album_id) as album:
-        assert not album.is_analyzed(55)
-        album.mark_analyzed(55, 0)
-        assert album.is_analyzed(55)
+        assert not album.is_analyzed(photo_id)
+        album.mark_analyzed(photo_id, 0)
+        assert album.is_analyzed(photo_id)
 
 
 def test_photo_exists(repository, insert_photo, unique_album_id):

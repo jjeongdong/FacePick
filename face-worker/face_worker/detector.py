@@ -6,6 +6,10 @@ from face_worker.face import DetectedFace, clamp_bbox
 
 # 미리보기(긴 변 2048)를 이 크기로 줄여 검출한다. InsightFace 기본값이며 CPU 에서 1초 안쪽.
 DET_SIZE = (640, 640)
+# 짧은 변이 이보다 작으면 품질 필터(최소 40px)를 넘는 얼굴이 있을 수 없다.
+# 극단적으로 가는 이미지는 DET_SIZE 로 줄일 때 짧은 변이 0 이 되어 InsightFace 가 cv2.error 를
+# 던지므로(일시 오류로 분류돼 무한 재시도), 모델에 넣기 전에 얼굴 없음으로 끝낸다.
+MIN_DETECTABLE_SIDE = 32
 
 
 def decode_image(image: bytes) -> np.ndarray:
@@ -35,6 +39,8 @@ class FaceDetector:
     def detect(self, image: bytes) -> list[DetectedFace]:
         pixels = decode_image(image)
         height, width = pixels.shape[:2]
+        if min(height, width) < MIN_DETECTABLE_SIDE:
+            return []
         return [
             DetectedFace(
                 bbox=clamp_bbox(tuple(face.bbox), width, height),

@@ -61,3 +61,13 @@ def test_same_face_twice_has_near_identical_embedding(detector):
     second = max(detector.detect(image), key=lambda f: f.det_score)
 
     assert float(first.embedding @ second.embedding) > 0.99
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(("height", "width"), [(1, 2048), (2, 2048), (2048, 3)])
+def test_extremely_thin_image_has_no_faces(detector, height, width):
+    # 640 으로 줄이면 짧은 변이 0 이 되어 InsightFace 안에서 cv2.resize 가 실패한다.
+    # 일시 오류로 분류되면 같은 메시지를 영원히 재시도해 파티션이 멈춘다.
+    thin = jpeg(np.full((height, width, 3), 128, dtype=np.uint8))
+
+    assert detector.detect(thin) == []
