@@ -5,3 +5,8 @@ __pycache__/
 /docs/
 .idea/
 frontend/
+
+# 측정용 사진·결과 원본 (loadtest/README.md)
+loadtest/source/
+loadtest/photos/
+loadtest/results/
