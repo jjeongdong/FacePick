@@ -25,6 +25,7 @@ class Config:
     database_url: str
     insightface_model: str
     match: MatchSettings
+    http_port: int
 
 
 def load_config() -> Config:
@@ -46,4 +47,5 @@ def load_config() -> Config:
             min_size=int(os.environ["FACE_MIN_SIZE"]),
             min_det_score=float(os.environ["FACE_MIN_DET_SCORE"]),
         ),
+        http_port=int(os.environ.get("HTTP_PORT", "8092")),
     )

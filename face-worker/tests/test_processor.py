@@ -6,7 +6,14 @@ import pytest
 from face_worker.config import MatchSettings
 from face_worker.errors import PermanentError
 from face_worker.memory_album import InMemoryAlbum
-from face_worker.processor import FaceProcessor
+from face_worker.messages import PreviewReady
+from face_worker.processor import (
+    ALREADY_ANALYZED,
+    ANALYZED,
+    SKIPPED_DELETED,
+    AnalysisResult,
+    FaceProcessor,
+)
 
 SETTINGS = MatchSettings(threshold=0.5, knn_k=5, min_size=40, min_det_score=0.6)
 ALBUM_ID = 3
@@ -224,3 +231,54 @@ def test_missing_preview_is_permanent_failure():
 def test_invalid_message_is_permanent_failure():
     with pytest.raises(PermanentError):
         processor(FakeRepository({1}), FakeStorage(), FakeDetector([])).handle(b"not json")
+
+
+def preview(photo_id: int) -> PreviewReady:
+    return PreviewReady(photo_id=photo_id, album_id=ALBUM_ID, preview_key=f"p/{photo_id}.jpg")
+
+
+def test_analyze_returns_face_count(unit_face):
+    repository = FakeRepository({1})
+    detector = FakeDetector([[unit_face(1, 0), unit_face(0, 1)]])
+
+    result = processor(repository, FakeStorage(), detector).analyze(preview(1))
+
+    assert result == AnalysisResult(ANALYZED, 2)
+    assert repository.album.marked == [(1, 2)]
+
+
+def test_analyze_reports_already_analyzed():
+    repository = FakeRepository({1})
+    repository.analyzed.add(1)
+
+    result = processor(repository, FakeStorage(), FakeDetector([])).analyze(preview(1))
+
+    assert result == AnalysisResult(ALREADY_ANALYZED)
+
+
+def test_analyze_reports_deleted_photo():
+    result = processor(FakeRepository(set()), FakeStorage(), FakeDetector([])).analyze(preview(1))
+
+    assert result == AnalysisResult(SKIPPED_DELETED)
+
+
+def test_analyze_reports_photo_finished_by_other_worker(unit_face):
+    repository = FakeRepository({1})
+    repository.analyzed_by_other_worker.add(1)
+
+    result = processor(repository, FakeStorage(), FakeDetector([[unit_face(1, 0)]])).analyze(
+        preview(1)
+    )
+
+    assert result == AnalysisResult(ALREADY_ANALYZED)
+
+
+def test_analyze_reports_photo_deleted_during_detection(unit_face):
+    repository = FakeRepository({1})
+    repository.deleted_during_detection.add(1)
+
+    result = processor(repository, FakeStorage(), FakeDetector([[unit_face(1, 0)]])).analyze(
+        preview(1)
+    )
+
+    assert result == AnalysisResult(SKIPPED_DELETED)
