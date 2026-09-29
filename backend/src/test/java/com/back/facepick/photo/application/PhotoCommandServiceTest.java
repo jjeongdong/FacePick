@@ -6,6 +6,7 @@ import static org.assertj.core.groups.Tuple.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.inOrder;
@@ -25,8 +26,7 @@ import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.FileResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.Status;
 import com.back.facepick.photo.domain.Photo;
-import com.back.facepick.photo.domain.PhotoOutbox;
-import com.back.facepick.photo.domain.PhotoOutboxRepository;
+import com.back.facepick.photo.domain.PhotoPipeline;
 import com.back.facepick.photo.domain.PhotoPurpose;
 import com.back.facepick.photo.domain.PhotoRepository;
 import com.back.facepick.photo.domain.PhotoStatus;
@@ -56,12 +56,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.json.JsonMapper;
 
 @ExtendWith(MockitoExtension.class)
 class PhotoCommandServiceTest {
@@ -80,16 +77,13 @@ class PhotoCommandServiceTest {
     private AlbumQueryApi albumQueryApi;
 
     @Mock
-    private PhotoOutboxRepository photoOutboxRepository;
+    private PhotoPipeline photoPipeline;
 
     @Mock
     private PhotoStorageDeletionRepository photoStorageDeletionRepository;
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
-
-    @Spy
-    private JsonMapper jsonMapper = JsonMapper.builder().build();
 
     @InjectMocks
     private PhotoCommandService photoCommandService;
@@ -265,8 +259,8 @@ class PhotoCommandServiceTest {
     class CompletePhoto {
 
         @Test
-        @DisplayName("스토리지 크기가 맞으면 UPLOADED 로 바꾸고 photo.uploaded 를 outbox 에 기록한다")
-        void completesAndWritesOutbox() {
+        @DisplayName("스토리지 크기가 맞으면 UPLOADED 로 바꾸고 트랜잭션 안에서 처리 파이프라인에 알린다")
+        void completesAndNotifiesPipeline() {
             // given
             Photo photo = PhotoFixture.pending(12L, ALBUM_ID, 1L);
             given(photoRepository.getById(12L)).willReturn(photo);
@@ -277,22 +271,12 @@ class PhotoCommandServiceTest {
 
             // then
             assertThat(result).isEqualTo(new PhotoCompleteResult(12L, PhotoStatus.UPLOADED));
-            ArgumentCaptor<PhotoOutbox> captor = ArgumentCaptor.forClass(PhotoOutbox.class);
-            then(photoOutboxRepository).should().save(captor.capture());
-            PhotoOutbox outbox = captor.getValue();
-            assertThat(outbox.getTopic()).isEqualTo("photo.uploaded");
-            assertThat(outbox.getMessageKey()).isEqualTo("10");
-            JsonNode payload = jsonMapper.readTree(outbox.getPayload());
-            assertThat(payload.get("photoId").asLong()).isEqualTo(12L);
-            assertThat(payload.get("albumId").asLong()).isEqualTo(10L);
-            assertThat(payload.get("storageKey").asString()).isEqualTo(photo.getStorageKey());
-            assertThat(payload.get("contentType").asString()).isEqualTo("image/jpeg");
-            assertThat(payload.get("byteSize").asLong()).isEqualTo(PhotoFixture.BYTE_SIZE);
+            then(photoPipeline).should().onCompleted(eq(photo), any(LocalDateTime.class));
         }
 
         @Test
-        @DisplayName("이미 UPLOADED 면 outbox 를 다시 쓰지 않고 같은 결과")
-        void doesNotWriteOutboxTwice() {
+        @DisplayName("이미 UPLOADED 면 파이프라인에 다시 알리지 않고 같은 결과")
+        void doesNotNotifyPipelineTwice() {
             // given
             Photo photo = PhotoFixture.uploaded(12L, ALBUM_ID, 1L, HASH_A);
             given(photoRepository.getById(12L)).willReturn(photo);
@@ -303,11 +287,11 @@ class PhotoCommandServiceTest {
 
             // then
             assertThat(result).isEqualTo(new PhotoCompleteResult(12L, PhotoStatus.UPLOADED));
-            then(photoOutboxRepository).should(never()).save(any(PhotoOutbox.class));
+            then(photoPipeline).should(never()).onCompleted(any(), any());
         }
 
         @Test
-        @DisplayName("스토리지에 파일이 없으면 PhotoFileMissingException 이고 outbox 를 쓰지 않는다")
+        @DisplayName("스토리지에 파일이 없으면 PhotoFileMissingException 이고 파이프라인에 알리지 않는다")
         void throwsWhenFileMissing() {
             // given
             Photo photo = PhotoFixture.pending(12L, ALBUM_ID, 1L);
@@ -317,7 +301,7 @@ class PhotoCommandServiceTest {
             // when & then
             assertThatThrownBy(() -> photoCommandService.completePhoto(1L, 12L))
                     .isInstanceOf(PhotoFileMissingException.class);
-            then(photoOutboxRepository).should(never()).save(any(PhotoOutbox.class));
+            then(photoPipeline).should(never()).onCompleted(any(), any());
         }
     }
 

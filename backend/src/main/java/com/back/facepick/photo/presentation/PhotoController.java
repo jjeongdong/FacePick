@@ -3,6 +3,7 @@ package com.back.facepick.photo.presentation;
 import com.back.facepick.global.authorization.annotation.AuthUser;
 import com.back.facepick.global.response.CursorPageResult;
 import com.back.facepick.photo.application.PhotoCommandService;
+import com.back.facepick.photo.application.PhotoCompleteService;
 import com.back.facepick.photo.application.PhotoQueryService;
 import com.back.facepick.photo.application.dto.result.PhotoCompleteResult;
 import com.back.facepick.photo.application.dto.result.PhotoDeleteResult;
@@ -34,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class PhotoController implements PhotoApiDocs {
     private final PhotoCommandService photoCommandService;
     private final PhotoQueryService photoQueryService;
+    private final PhotoCompleteService photoCompleteService;
 
     // 새로 만든 사진과 건너뛴 사진이 섞인 결과라 201 이 아닌 200 으로 준다.
     @Override
@@ -46,7 +48,7 @@ public class PhotoController implements PhotoApiDocs {
     @Override
     @PostMapping("/photos/{photoId}/complete")
     public ResponseEntity<PhotoCompleteResult> completePhoto(@AuthUser Long userId, @PathVariable Long photoId) {
-        return ResponseEntity.ok(photoCommandService.completePhoto(userId, photoId));
+        return ResponseEntity.ok(photoCompleteService.completePhoto(userId, photoId));
     }
 
     // 여러 장을 한 번에 지우는 동작이라 DELETE 대신 POST + 동사 하위 경로를 쓴다.
