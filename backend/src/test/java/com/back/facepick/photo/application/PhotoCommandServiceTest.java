@@ -29,6 +29,7 @@ import com.back.facepick.photo.domain.PhotoStatus;
 import com.back.facepick.photo.domain.PhotoStorage;
 import com.back.facepick.photo.domain.PhotoStorageDeletion;
 import com.back.facepick.photo.domain.PhotoStorageDeletionRepository;
+import com.back.facepick.photo.domain.event.PhotosDeletedEvent;
 import com.back.facepick.photo.domain.exception.PhotoAlbumExpiredException;
 import com.back.facepick.photo.domain.exception.PhotoDeleteAlbumExpiredException;
 import com.back.facepick.photo.domain.exception.PhotoDeleteNotAlbumMemberException;
@@ -51,6 +52,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -76,6 +78,9 @@ class PhotoCommandServiceTest {
 
     @Mock
     private PhotoStorageDeletionRepository photoStorageDeletionRepository;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @Spy
     private JsonMapper jsonMapper = JsonMapper.builder().build();
@@ -342,6 +347,38 @@ class PhotoCommandServiceTest {
         }
 
         @Test
+        @DisplayName("지운 사진 ID 를 오름차순으로 담아 사진 삭제 이벤트를 발행한다")
+        void publishesPhotosDeletedEvent() {
+            // given
+            givenAlbum(1L, true, LocalDateTime.now().plusDays(1));
+            given(photoRepository.findAllByAlbumIdAndIds(ALBUM_ID, List.of(13L, 12L)))
+                    .willReturn(List.of(
+                            PhotoFixture.uploaded(13L, ALBUM_ID, 1L, HASH_B),
+                            PhotoFixture.pending(12L, ALBUM_ID, 1L, HASH_A)));
+
+            // when
+            photoCommandService.deletePhotos(1L, ALBUM_ID, new PhotoDeleteCommand(List.of(13L, 12L)));
+
+            // then
+            then(eventPublisher).should().publishEvent(new PhotosDeletedEvent(ALBUM_ID, List.of(12L, 13L)));
+        }
+
+        @Test
+        @DisplayName("지운 사진이 없으면 이벤트를 발행하지 않는다")
+        void doesNotPublishWhenNothingDeleted() {
+            // given
+            givenAlbum(1L, true, LocalDateTime.now().plusDays(1));
+            given(photoRepository.findAllByAlbumIdAndIds(ALBUM_ID, List.of(999L)))
+                    .willReturn(List.of());
+
+            // when
+            photoCommandService.deletePhotos(1L, ALBUM_ID, new PhotoDeleteCommand(List.of(999L)));
+
+            // then
+            then(eventPublisher).should(never()).publishEvent(any(Object.class));
+        }
+
+        @Test
         @DisplayName("이 앨범에 없는 ID 는 건너뛰고 실제로 지운 ID 만 준다")
         void skipsMissingIds() {
             // given
@@ -408,6 +445,7 @@ class PhotoCommandServiceTest {
                     .isInstanceOf(PhotoNotDeletableException.class);
             then(photoRepository).should(never()).deleteAll(anyList());
             then(photoStorageDeletionRepository).shouldHaveNoInteractions();
+            then(eventPublisher).shouldHaveNoInteractions();
         }
 
         @Test
