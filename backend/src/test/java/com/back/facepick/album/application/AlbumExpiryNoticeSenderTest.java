@@ -22,6 +22,7 @@ import com.back.facepick.album.fixture.AlbumExpiryNoticeFixture;
 import com.back.facepick.album.fixture.AlbumFixture;
 import com.back.facepick.auth.application.AuthQueryApi;
 import com.back.facepick.auth.application.dto.api.CredentialInfo;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -57,7 +58,8 @@ class AlbumExpiryNoticeSenderTest {
                 mailSender,
                 mock(PlatformTransactionManager.class),
                 20,
-                5);
+                5,
+                0);
     }
 
     // 만료까지 5일 남은 앨범 (생성 25일 전)
@@ -106,7 +108,7 @@ class AlbumExpiryNoticeSenderTest {
         then(mailSender).should().send(mail.capture());
         assertThat(mail.getValue())
                 .isEqualTo(new ExpiryMail(
-                        "album-expiry-notice-42", "me@example.com", ALBUM_ID, "제주 여행", album.getExpiresAt()));
+                        notice.idempotencyKey(), "me@example.com", ALBUM_ID, "제주 여행", album.getExpiresAt()));
         assertThat(notice.getStatus()).isEqualTo(AlbumExpiryNoticeStatus.SENT);
         assertThat(notice.getProviderMessageId()).isEqualTo("re_abc");
         assertThat(notice.getAttempts()).isEqualTo(1);
@@ -227,5 +229,45 @@ class AlbumExpiryNoticeSenderTest {
         // then
         then(mailSender).should(times(2)).send(any());
         assertThat(second.getStatus()).isEqualTo(AlbumExpiryNoticeStatus.SENT);
+    }
+
+    @Test
+    @DisplayName("메일을 보낼 때마다 설정한 만큼 쉰다 (Resend 요청 한도 429 로 시도 횟수를 낭비하지 않게)")
+    void pausesBetweenSends() {
+        // given
+        AlbumExpiryNoticeSender pacedSender = new AlbumExpiryNoticeSender(
+                noticeRepository,
+                albumRepository,
+                authQueryApi,
+                mailSender,
+                mock(PlatformTransactionManager.class),
+                20,
+                5,
+                100);
+        Album album = liveAlbum();
+        List<AlbumExpiryNotice> notices = List.of(
+                AlbumExpiryNoticeFixture.pending(41L, ALBUM_ID, USER_ID),
+                AlbumExpiryNoticeFixture.pending(42L, ALBUM_ID, 2L),
+                AlbumExpiryNoticeFixture.pending(43L, ALBUM_ID, 3L));
+        given(noticeRepository.findDueForUpdate(any(), anyInt())).willReturn(notices);
+        notices.forEach(n -> given(noticeRepository.findById(n.getId())).willReturn(Optional.of(n)));
+        given(albumRepository.findAllByIds(List.of(ALBUM_ID))).willReturn(List.of(album));
+        given(authQueryApi.getInfos(List.of(USER_ID, 2L, 3L)))
+                .willReturn(Map.of(
+                        USER_ID,
+                        new CredentialInfo(USER_ID, "a@example.com"),
+                        2L,
+                        new CredentialInfo(2L, "b@example.com"),
+                        3L,
+                        new CredentialInfo(3L, "c@example.com")));
+        given(mailSender.send(any())).willReturn(MailSendOutcome.sent("re_x"));
+        long started = System.nanoTime();
+
+        // when
+        pacedSender.send();
+
+        // then
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).isGreaterThanOrEqualTo(Duration.ofMillis(200));
+        assertThat(notices).allMatch(n -> n.getStatus() == AlbumExpiryNoticeStatus.SENT);
     }
 }

@@ -35,6 +35,7 @@ public class AlbumExpiryNoticeSender {
     private final TransactionTemplate transactionTemplate;
     private final int batchSize;
     private final Duration lease;
+    private final long sendPauseMillis;
 
     public AlbumExpiryNoticeSender(
             AlbumExpiryNoticeRepository albumExpiryNoticeRepository,
@@ -43,7 +44,8 @@ public class AlbumExpiryNoticeSender {
             ExpiryMailSender expiryMailSender,
             PlatformTransactionManager transactionManager,
             @Value("${facepick.album.expiry-notice.batch-size}") int batchSize,
-            @Value("${facepick.album.expiry-notice.lease-minutes}") long leaseMinutes) {
+            @Value("${facepick.album.expiry-notice.lease-minutes}") long leaseMinutes,
+            @Value("${facepick.album.expiry-notice.send-pause-millis}") long sendPauseMillis) {
         this.albumExpiryNoticeRepository = albumExpiryNoticeRepository;
         this.albumRepository = albumRepository;
         this.authQueryApi = authQueryApi;
@@ -51,6 +53,7 @@ public class AlbumExpiryNoticeSender {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.batchSize = batchSize;
         this.lease = Duration.ofMinutes(leaseMinutes);
+        this.sendPauseMillis = sendPauseMillis;
     }
 
     @Scheduled(fixedDelayString = "${facepick.album.expiry-notice.send-interval-millis}")
@@ -98,6 +101,7 @@ public class AlbumExpiryNoticeSender {
         }
         MailSendOutcome outcome = sendSafely(new ExpiryMail(
                 notice.idempotencyKey(), credential.email(), album.getId(), album.getTitle(), album.getExpiresAt()));
+        pause();
         LocalDateTime now = LocalDateTime.now();
         switch (outcome.type()) {
             case SENT -> update(notice.getId(), row -> row.markSent(outcome.providerMessageId(), now));
@@ -113,6 +117,19 @@ public class AlbumExpiryNoticeSender {
         } catch (RuntimeException e) {
             log.error("만료 알림 메일 구현이 예외를 던졌다 key={}", mail.idempotencyKey(), e);
             return MailSendOutcome.retryable(e.getClass().getSimpleName() + ": " + e.getMessage());
+        }
+    }
+
+    // Resend 는 초당 요청 수를 제한한다. 배치를 쉬지 않고 보내면 429 가 시도 횟수를 써 버려 일부 멤버가 FAILED 가 될 수 있다.
+    private void pause() {
+        if (sendPauseMillis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(sendPauseMillis);
+        } catch (InterruptedException e) {
+            // 종료 중이면 남은 행은 쉬지 않고 처리하고, 끝나지 않은 행은 임대가 끝난 뒤 다시 잡힌다.
+            Thread.currentThread().interrupt();
         }
     }
 
