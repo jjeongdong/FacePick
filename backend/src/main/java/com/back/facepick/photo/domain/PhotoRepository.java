@@ -30,6 +30,11 @@ public interface PhotoRepository {
 
     void deleteAll(List<Photo> photos);
 
+    // 앨범 자동 삭제용. 이 앨범의 사진 ID 를 상태·용도와 관계없이 photo_id 오름차순으로 최대 limit 개. 행을 잠근다.
+    List<Long> findIdsForPurge(Long albumId, int limit);
+
+    void deleteAllByIds(Collection<Long> photoIds);
+
     // 같은 저장 키(같은 앨범·같은 파일)를 쓰는 사진이 있는지. 상태와 관계없다.
     boolean existsByStorageKey(String storageKey);
 

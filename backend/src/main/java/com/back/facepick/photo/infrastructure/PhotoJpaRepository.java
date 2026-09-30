@@ -11,6 +11,7 @@ import java.util.Optional;
 import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -24,6 +25,24 @@ public interface PhotoJpaRepository extends JpaRepository<Photo, Long> {
     List<Photo> findAllByAlbumIdAndPurposeAndIdIn(Long albumId, PhotoPurpose purpose, Collection<Long> photoIds);
 
     boolean existsByStorageKey(String storageKey);
+
+    // 네이티브 사유: FOR UPDATE 와 LIMIT 를 함께 쓰고, 엔티티 500개를 읽지 않고 ID 만 가져온다.
+    // 행을 잠가 두 서버가 같은 앨범을 동시에 정리해도 한쪽이 기다렸다가 지워진 행을 건너뛴다.
+    @Query(
+            nativeQuery = true,
+            value =
+                    """
+                    SELECT photo_id FROM photos
+                    WHERE album_id = :albumId
+                    ORDER BY photo_id
+                    LIMIT :limit
+                    FOR UPDATE
+                    """)
+    List<Long> findIdsForPurge(@Param("albumId") Long albumId, @Param("limit") int limit);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("delete from Photo p where p.id in :photoIds")
+    int deleteAllByIdIn(@Param("photoIds") Collection<Long> photoIds);
 
     @Query(
             """
