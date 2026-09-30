@@ -8,6 +8,11 @@ spring:
     active: local
   lifecycle:
     timeout-per-shutdown-phase: 30s
+  task:
+    scheduling:
+      pool:
+        # 만료 알림 발송기가 외부 API 를 기다리는 동안(최대 batch-size × 읽기 타임아웃) outbox relay·cleaner 가 멈추지 않게 한다.
+        size: 3
   jpa:
     open-in-view: false
     hibernate:
