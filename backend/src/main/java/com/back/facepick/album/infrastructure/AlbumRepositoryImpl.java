@@ -4,6 +4,8 @@ import com.back.facepick.album.domain.Album;
 import com.back.facepick.album.domain.AlbumRepository;
 import com.back.facepick.album.domain.exception.AlbumInviteNotFoundException;
 import com.back.facepick.album.domain.exception.AlbumNotFoundException;
+import java.util.Collection;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
@@ -25,5 +27,10 @@ public class AlbumRepositoryImpl implements AlbumRepository {
     @Override
     public Album getByInviteCode(String inviteCode) {
         return albumJpaRepository.findByInviteCode(inviteCode).orElseThrow(AlbumInviteNotFoundException::new);
+    }
+
+    @Override
+    public List<Album> findAllByIds(Collection<Long> albumIds) {
+        return albumJpaRepository.findAllById(albumIds);
     }
 }
