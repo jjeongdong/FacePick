@@ -13,6 +13,7 @@ import jakarta.persistence.Table;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -62,12 +63,17 @@ public class AlbumExpiryNotice extends BaseTimeEntity {
     @Column(name = "sent_at")
     private LocalDateTime sentAt;
 
+    // 스캐너의 INSERT ... SELECT 는 DB 기본값(gen_random_uuid())으로 채운다.
+    @Column(name = "idempotency_key", nullable = false, updatable = false)
+    private UUID idempotencyKey;
+
     private AlbumExpiryNotice(Long albumId, Long userId, LocalDateTime now) {
         this.albumId = albumId;
         this.userId = userId;
         this.status = AlbumExpiryNoticeStatus.PENDING;
         this.attempts = 0;
         this.nextAttemptAt = now;
+        this.idempotencyKey = UUID.randomUUID();
     }
 
     // 운영에서는 스캐너의 INSERT ... SELECT 가 행을 만든다. 같은 초깃값을 쓴다.
@@ -112,8 +118,9 @@ public class AlbumExpiryNotice extends BaseTimeEntity {
     }
 
     // 재시도해도 같은 값이어야 Resend 가 이미 보낸 메일을 다시 보내지 않는다.
+    // notice_id 가 아니라 행마다 무작위 값을 써서, DB 초기화나 다른 환경과 Resend 계정을 함께 써도 키가 겹치지 않는다.
     public String idempotencyKey() {
-        return IDEMPOTENCY_KEY_PREFIX + id;
+        return IDEMPOTENCY_KEY_PREFIX + idempotencyKey;
     }
 
     private void requirePending() {

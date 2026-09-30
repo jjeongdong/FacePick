@@ -94,6 +94,22 @@ class AlbumExpiryNoticeRepositoryImplQueryTest {
     }
 
     @Test
+    @DisplayName("행 생성 - 멱등 키를 DB 가 행마다 다른 값으로 채운다")
+    void fillsDistinctIdempotencyKeys() {
+        // given
+        albumExpiringIn(Duration.ofDays(5), 1L, 2L);
+
+        // when
+        noticeRepository.createPendingForAlbumsExpiringBetween(NOW, UNTIL);
+
+        // then
+        List<String> keys = noticeJpaRepository.findAll().stream()
+                .map(AlbumExpiryNotice::idempotencyKey)
+                .toList();
+        assertThat(keys).hasSize(2).doesNotHaveDuplicates().noneMatch(key -> key.endsWith("null"));
+    }
+
+    @Test
     @DisplayName("행 생성 - 정확히 7일 뒤 만료는 포함, 7일 넘게 남았거나 이미 만료된 앨범은 뺀다")
     void appliesWindowBoundaries() {
         // given

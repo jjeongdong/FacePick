@@ -29,13 +29,24 @@ class AlbumExpiryNoticeTest {
     }
 
     @Test
-    @DisplayName("멱등 키는 알림 ID 로 정해진다")
-    void idempotencyKey() {
+    @DisplayName("멱등 키는 알림마다 무작위로 정해지고 다시 불러도 같다")
+    void idempotencyKeyIsStablePerNotice() {
         // given
         AlbumExpiryNotice notice = AlbumExpiryNoticeFixture.pending(42L, 10L, 1L);
 
         // when & then
-        assertThat(notice.idempotencyKey()).isEqualTo("album-expiry-notice-42");
+        assertThat(notice.idempotencyKey()).startsWith("album-expiry-notice-").isEqualTo(notice.idempotencyKey());
+    }
+
+    @Test
+    @DisplayName("멱등 키는 알림 ID 로 정하지 않는다 - DB 를 초기화해 같은 ID 가 다시 나와도 Resend 키가 겹치지 않게")
+    void idempotencyKeyDoesNotDependOnId() {
+        // given
+        AlbumExpiryNotice before = AlbumExpiryNoticeFixture.pending(1L, 10L, 1L);
+        AlbumExpiryNotice afterReset = AlbumExpiryNoticeFixture.pending(1L, 20L, 2L);
+
+        // when & then
+        assertThat(before.idempotencyKey()).isNotEqualTo(afterReset.idempotencyKey());
     }
 
     @Nested
