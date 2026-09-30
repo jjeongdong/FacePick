@@ -9,7 +9,8 @@ public enum AlbumErrorCode implements ErrorCode {
     ALBUM_NOT_MEMBER(ErrorType.FORBIDDEN, "앨범 참여자만 볼 수 있습니다."),
     ALBUM_NOT_OWNER(ErrorType.FORBIDDEN, "앨범장만 할 수 있습니다."),
     ALBUM_INVITE_NOT_FOUND(ErrorType.NOT_FOUND, "유효하지 않은 초대 코드입니다."),
-    ALBUM_EXPIRED(ErrorType.INVALID, "만료된 앨범입니다.");
+    ALBUM_EXPIRED(ErrorType.INVALID, "만료된 앨범입니다."),
+    ALBUM_EXPIRY_NOTICE_NOT_PENDING(ErrorType.INTERNAL, "이미 처리된 만료 알림입니다.");
 
     private final ErrorType type;
     private final String message;
