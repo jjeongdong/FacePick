@@ -1,6 +1,7 @@
 package com.back.facepick.photo.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.net.URL;
 import java.net.http.HttpClient;
@@ -18,6 +19,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.MountableFile;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
 
 @Testcontainers(disabledWithoutDocker = true)
 class S3PhotoStorageTest {
@@ -43,17 +46,15 @@ class S3PhotoStorageTest {
             .withStartupTimeout(Duration.ofMinutes(2));
 
     private static S3PhotoStorage storage;
+    private static S3Client s3Client;
 
     @BeforeAll
     static void setUp() {
         String endpoint = "http://" + seaweedfs.getHost() + ":" + seaweedfs.getMappedPort(S3_PORT);
         S3StorageConfig config = new S3StorageConfig();
+        s3Client = config.s3Client(endpoint, REGION, ACCESS_KEY, SECRET_KEY);
         storage = new S3PhotoStorage(
-                config.s3Client(endpoint, REGION, ACCESS_KEY, SECRET_KEY),
-                config.s3Presigner(endpoint, REGION, ACCESS_KEY, SECRET_KEY),
-                "photos",
-                15,
-                60);
+                s3Client, config.s3Presigner(endpoint, REGION, ACCESS_KEY, SECRET_KEY), "photos", 15, 60);
         storage.createBucketIfMissing();
     }
 
@@ -164,5 +165,63 @@ class S3PhotoStorageTest {
     private static HttpResponse<byte[]> get(URL url) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(url.toURI()).GET().build();
         return HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofByteArray());
+    }
+
+    @Test
+    @DisplayName("prefix 삭제 - 한 페이지(1000개)를 넘는 파일도 모두 지운다")
+    void deletesMoreThanOnePage() {
+        // given
+        for (int i = 0; i < 1050; i++) {
+            putDirect("albums/500/originals/" + i);
+        }
+
+        // when
+        storage.deleteByPrefix("albums/500/");
+
+        // then
+        assertThat(countKeys("albums/500/")).isZero();
+    }
+
+    @Test
+    @DisplayName("prefix 삭제 - ID 앞자리가 같은 다른 앨범(albums/7/ 과 albums/77/)의 파일은 남긴다")
+    void keepsOtherAlbumWithSharedPrefix() {
+        // given
+        putDirect("albums/7/originals/a");
+        putDirect("albums/7/thumbnails/a.jpg");
+        putDirect("albums/77/originals/b");
+
+        // when
+        storage.deleteByPrefix("albums/7/");
+
+        // then
+        assertThat(countKeys("albums/7/")).isZero();
+        assertThat(storage.findObjectSize("albums/77/originals/b")).isPresent();
+    }
+
+    @Test
+    @DisplayName("prefix 삭제 - 파일이 없으면 아무 일 없이 끝난다")
+    void deletesNothingForEmptyPrefix() {
+        // when
+        storage.deleteByPrefix("albums/501/");
+
+        // then
+        assertThat(countKeys("albums/501/")).isZero();
+    }
+
+    @Test
+    @DisplayName("prefix 삭제 - '/' 로 끝나지 않으면 다른 앨범까지 지울 수 있어 거절한다")
+    void rejectsPrefixWithoutSlash() {
+        // when & then
+        assertThatThrownBy(() -> storage.deleteByPrefix("albums/7")).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private static void putDirect(String key) {
+        s3Client.putObject(request -> request.bucket("photos").key(key), RequestBody.fromBytes(new byte[] {1}));
+    }
+
+    private static int countKeys(String prefix) {
+        return s3Client.listObjectsV2(request -> request.bucket("photos").prefix(prefix))
+                .contents()
+                .size();
     }
 }

@@ -13,6 +13,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
@@ -100,6 +101,30 @@ public class S3PhotoStorage implements PhotoStorage {
     public void deleteObjects(List<String> keys) {
         for (String key : keys) {
             s3Client.deleteObject(request -> request.bucket(bucket).key(key));
+        }
+    }
+
+    // 지우면서 continuation token 으로 이어 읽으면 스토리지에 따라 키를 건너뛸 수 있어, 첫 페이지를 지우고 다시 읽는다.
+    // 삭제가 조용히 실패해 같은 첫 페이지가 또 나오면 무한 반복하지 않게 예외로 끝낸다 (다음 주기에 다시).
+    @Override
+    public void deleteByPrefix(String prefix) {
+        if (!prefix.endsWith("/")) {
+            throw new IllegalArgumentException("prefix 는 '/' 로 끝나야 한다: " + prefix);
+        }
+        List<String> previous = List.of();
+        while (true) {
+            List<String> keys =
+                    s3Client.listObjectsV2(request -> request.bucket(bucket).prefix(prefix)).contents().stream()
+                            .map(S3Object::key)
+                            .toList();
+            if (keys.isEmpty()) {
+                return;
+            }
+            if (keys.equals(previous)) {
+                throw new IllegalStateException("지운 파일이 다시 조회된다 prefix=" + prefix);
+            }
+            deleteObjects(keys);
+            previous = keys;
         }
     }
 

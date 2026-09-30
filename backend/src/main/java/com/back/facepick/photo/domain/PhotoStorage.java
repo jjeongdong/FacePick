@@ -24,4 +24,7 @@ public interface PhotoStorage {
 
     /** 키마다 지운다. 없는 키도 성공으로 본다. */
     void deleteObjects(List<String> keys);
+
+    /** prefix 아래 파일을 모두 지운다. prefix 는 '/' 로 끝나야 한다 (albums/7 이 albums/77/ 까지 지우지 않게). */
+    void deleteByPrefix(String prefix);
 }
