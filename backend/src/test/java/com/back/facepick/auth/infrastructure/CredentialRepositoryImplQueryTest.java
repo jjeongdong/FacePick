@@ -7,6 +7,7 @@ import com.back.facepick.auth.domain.Credential;
 import com.back.facepick.auth.domain.exception.AuthEmailAlreadyExistsException;
 import com.back.facepick.auth.fixture.CredentialFixture;
 import com.back.facepick.global.config.data.JpaAuditingConfig;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,5 +59,18 @@ class CredentialRepositoryImplQueryTest {
         // when & then
         assertThatThrownBy(() -> credentialRepository.save(CredentialFixture.credential(2L, "ME@example.com")))
                 .isInstanceOf(AuthEmailAlreadyExistsException.class);
+    }
+
+    @Test
+    @DisplayName("사용자 ID 여러 개로 찾는다. 없는 ID 는 빠진다")
+    void findsAllByUserIds() {
+        // given
+        credentialRepository.save(CredentialFixture.credential(1L, "a@example.com"));
+        credentialRepository.save(CredentialFixture.credential(2L, "b@example.com"));
+
+        // when & then
+        assertThat(credentialRepository.findAllByUserIds(List.of(1L, 999L)))
+                .extracting(Credential::getEmail)
+                .containsExactly("a@example.com");
     }
 }
