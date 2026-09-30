@@ -61,6 +61,19 @@ public class PersonFaceRepositoryImpl implements PersonFaceRepository {
     }
 
     @Override
+    public void deleteAllOfAlbum(Long albumId) {
+        for (String sql : List.of(
+                "DELETE FROM faces WHERE album_id = :albumId",
+                "DELETE FROM persons WHERE album_id = :albumId",
+                "DELETE FROM face_analyses WHERE album_id = :albumId")) {
+            entityManager
+                    .createNativeQuery(sql)
+                    .setParameter("albumId", albumId)
+                    .executeUpdate();
+        }
+    }
+
+    @Override
     public void cleanUpPersons(Collection<Long> personIds, LocalDateTime now) {
         entityManager
                 .createNativeQuery(

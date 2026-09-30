@@ -222,6 +222,37 @@ class PersonFaceRepositoryImplQueryTest {
         assertThat(photoIds).containsExactly(10L, 11L);
     }
 
+    @Test
+    @DisplayName("앨범 일괄 삭제 - 이 앨범의 얼굴·인물·분석 표시를 모두 지우고 다른 앨범은 남긴다")
+    void deletesAllOfAlbum() {
+        // given
+        Long albumId = 30L;
+        Long person = insertPerson(jdbcTemplate, albumId);
+        setCover(jdbcTemplate, person, insertFace(jdbcTemplate, albumId, 300L, person, 0.9));
+        insertFace(jdbcTemplate, albumId, 301L, person, 0.8);
+        insertAnalysis(jdbcTemplate, albumId, 300L);
+        insertAnalysis(jdbcTemplate, albumId, 301L);
+        Long otherPerson = insertPerson(jdbcTemplate, OTHER_ALBUM_ID);
+        setCover(jdbcTemplate, otherPerson, insertFace(jdbcTemplate, OTHER_ALBUM_ID, 302L, otherPerson, 0.9));
+        insertAnalysis(jdbcTemplate, OTHER_ALBUM_ID, 302L);
+
+        // when
+        personFaceRepository.deleteAllOfAlbum(albumId);
+
+        // then
+        assertThat(countByAlbum("faces", albumId)).isZero();
+        assertThat(countByAlbum("persons", albumId)).isZero();
+        assertThat(countByAlbum("face_analyses", albumId)).isZero();
+        assertThat(countByAlbum("faces", OTHER_ALBUM_ID)).isPositive();
+        assertThat(countByAlbum("persons", OTHER_ALBUM_ID)).isPositive();
+        assertThat(countByAlbum("face_analyses", OTHER_ALBUM_ID)).isPositive();
+    }
+
+    private Long countByAlbum(String table, Long albumId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM " + table + " WHERE album_id = ?", Long.class, albumId);
+    }
+
     private List<Long> faceIds(Long albumId) {
         return jdbcTemplate.queryForList(
                 "SELECT face_id FROM faces WHERE album_id = ? ORDER BY face_id", Long.class, albumId);

@@ -19,6 +19,9 @@ public interface PersonFaceRepository {
 
     void deleteAnalysesOfPhotos(Long albumId, Collection<Long> photoIds);
 
+    // 앨범 삭제용. 얼굴 → 인물 → 분석 표시 순으로 지운다 (faces.person_id 가 persons 를 참조하므로 얼굴이 먼저).
+    void deleteAllOfAlbum(Long albumId);
+
     // 대표 얼굴이 빈 인물은 남은 얼굴 중 det_score 최고(동점이면 face_id 작은 것)로 채우고, 남은 얼굴이 없으면 지운다.
     void cleanUpPersons(Collection<Long> personIds, LocalDateTime now);
 
