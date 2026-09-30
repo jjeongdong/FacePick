@@ -73,6 +73,18 @@ facepick:
     app-base-url: http://localhost:5173
     connect-timeout-millis: 2000
     read-timeout-millis: 5000
+    # Resend 서킷 브레이커. 타임아웃·연결 실패·5xx 만 실패로 센다 (4xx 는 요청마다의 문제, 429 는 기록하지 않음).
+    circuit-breaker:
+      # 최근 이만큼의 호출로 판단한다 (발송 배치 20건 안에서 판단되게)
+      window-size: 10
+      minimum-calls: 5
+      failure-rate: 50
+      # 평소 1초 안에 응답한다. 이보다 느린 호출이 slow-call-rate 넘으면 타임아웃(5초)까지 가기 전에 연다.
+      slow-call-millis: 3000
+      slow-call-rate: 50
+      # 발송 주기와 같게 두어 다음 회차에 한 번 떠본다. 보내지 않은 알림도 이만큼 뒤에 다시 대상이 된다.
+      open-seconds: 60
+      half-open-calls: 2
   album:
     expiry-notice:
       # 만료 이만큼 전부터 알림 대상이 된다 (PRD: 7일 전 알림)
