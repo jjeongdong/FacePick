@@ -6,7 +6,5 @@ __pycache__/
 .idea/
 frontend/
 
-# 측정용 사진·결과 원본 (loadtest/README.md)
-loadtest/source/
-loadtest/photos/
-loadtest/results/
+# 동기 vs 이벤트 부하 측정 도구·사진·결과 (로컬에만 둔다)
+loadtest/
