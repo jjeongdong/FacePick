@@ -49,3 +49,12 @@ facepick:
     connect-timeout-millis: 2000
     thumbnail-read-timeout-millis: 30000
     face-read-timeout-millis: 60000
+  album:
+    expiry-notice:
+      # 만료 이만큼 전부터 알림 대상이 된다 (PRD: 7일 전 알림)
+      days-before: 7
+      scan-interval-millis: 3600000
+      send-interval-millis: 60000
+      batch-size: 20
+      # 선점한 행을 다른 발송기가 다시 잡지 않는 시간. batch-size × 읽기 타임아웃(20 × 5초)보다 길어야 한다.
+      lease-minutes: 5
