@@ -17,8 +17,11 @@ import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatusCode;
@@ -26,6 +29,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+@ExtendWith(OutputCaptureExtension.class)
 class ResendExpiryMailSenderTest {
 
     private static final ExpiryMail MAIL = new ExpiryMail(
@@ -138,5 +142,21 @@ class ResendExpiryMailSenderTest {
 
         // when & then
         assertThat(sender.send(MAIL).type()).isEqualTo(MailSendOutcome.Type.RETRYABLE);
+    }
+
+    @Test
+    @DisplayName("설정 오류 로그에는 상태와 오류 이름만 남기고, 이메일이 든 응답 본문은 남기지 않는다")
+    void doesNotLogResponseBody(CapturedOutput output) {
+        // given
+        respondWith(
+                403,
+                "{\"statusCode\":403,\"name\":\"validation_error\","
+                        + "\"message\":\"You can only send testing emails to your own email address (owner@example.com).\"}");
+
+        // when
+        sender.send(MAIL);
+
+        // then
+        assertThat(output).contains("403").contains("validation_error").doesNotContain("owner@example.com");
     }
 }

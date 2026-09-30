@@ -4,6 +4,8 @@ import com.back.facepick.album.domain.ExpiryMail;
 import com.back.facepick.album.domain.ExpiryMailSender;
 import com.back.facepick.album.domain.MailSendOutcome;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClient;
@@ -19,6 +21,7 @@ public class ResendExpiryMailSender implements ExpiryMailSender {
     private static final int FORBIDDEN = 403;
     // 같은 키 요청이 아직 처리 중 — 잠시 뒤 다시 보내면 된다.
     private static final String CONCURRENT_IDEMPOTENT = "concurrent_idempotent_requests";
+    private static final Pattern ERROR_NAME = Pattern.compile("\"name\"\\s*:\\s*\"([^\"]+)\"");
 
     private final RestClient restClient;
     private final String from;
@@ -60,9 +63,19 @@ public class ResendExpiryMailSender implements ExpiryMailSender {
         }
         if (status == UNAUTHORIZED || status == FORBIDDEN || status == CONFLICT) {
             // 키·발신 주소 설정 문제이거나, 재시도 사이 메일 내용이 바뀐 버그다. 다시 보내도 같다.
-            log.error("Resend 설정 또는 멱등 키 오류로 만료 알림을 보낼 수 없다 key={} error={}", mail.idempotencyKey(), error);
+            // 응답 본문(message)에는 계정 이메일이 들어 있을 수 있어 로그에는 상태와 오류 이름만 남긴다.
+            log.error(
+                    "Resend 설정 또는 멱등 키 오류로 만료 알림을 보낼 수 없다 key={} status={} name={}",
+                    mail.idempotencyKey(),
+                    status,
+                    errorName(e.getResponseBodyAsString()));
         }
         return MailSendOutcome.permanent(error);
+    }
+
+    private static String errorName(String body) {
+        Matcher matcher = ERROR_NAME.matcher(body);
+        return matcher.find() ? matcher.group(1) : "unknown";
     }
 
     record SendEmailBody(String from, List<String> to, String subject, String text, String html) {}
