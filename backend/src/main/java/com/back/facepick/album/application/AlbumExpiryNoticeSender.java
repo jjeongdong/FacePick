@@ -9,6 +9,7 @@ import com.back.facepick.album.domain.ExpiryMailSender;
 import com.back.facepick.album.domain.MailSendOutcome;
 import com.back.facepick.auth.application.AuthQueryApi;
 import com.back.facepick.auth.application.dto.api.CredentialInfo;
+import com.back.facepick.global.config.scheduling.SchedulerNames;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -25,6 +26,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 // 외부 API(Resend)를 기다리는 동안 DB 커넥션·행 잠금을 잡지 않도록, 선점과 결과 저장만 짧은 트랜잭션으로 나눈다.
 // 선점 → (트랜잭션 밖) 발송 → 행마다 결과 저장. 발송 중 서버가 죽으면 임대가 끝난 뒤 같은 멱등 키로 다시 보낸다.
+// 메일 서비스가 장애 중이면(서킷 OPEN) 선점하지 않고, 배치 도중 열려 보내지 못한 행은 시도 횟수를 되돌려 반납한다.
 @Slf4j
 @Service
 public class AlbumExpiryNoticeSender {
@@ -56,8 +58,15 @@ public class AlbumExpiryNoticeSender {
         this.sendPauseMillis = sendPauseMillis;
     }
 
-    @Scheduled(fixedDelayString = "${facepick.album.expiry-notice.send-interval-millis}")
+    @Scheduled(
+            fixedDelayString = "${facepick.album.expiry-notice.send-interval-millis}",
+            scheduler = SchedulerNames.EXTERNAL)
     public void send() {
+        // 메일 서비스가 장애 중이면(서킷 OPEN) 선점조차 하지 않는다. 행은 그대로 두고 다음 회차에 다시 본다.
+        if (!expiryMailSender.isAvailable()) {
+            log.debug("메일 서비스를 쓸 수 없어 이번 발송 회차를 건너뛴다");
+            return;
+        }
         List<AlbumExpiryNotice> notices = claim(LocalDateTime.now());
         if (notices.isEmpty()) {
             return;
@@ -101,12 +110,18 @@ public class AlbumExpiryNoticeSender {
         }
         MailSendOutcome outcome = sendSafely(new ExpiryMail(
                 notice.idempotencyKey(), credential.email(), album.getId(), album.getTitle(), album.getExpiresAt()));
+        if (outcome.type() == MailSendOutcome.Type.NOT_ATTEMPTED) {
+            // 호출하지 않았으니 한도에 걸릴 일도 없어 쉬지 않고 다음 행으로 간다.
+            update(notice.getId(), row -> row.releaseUnattempted(outcome.retryAt()));
+            return;
+        }
         pause();
         LocalDateTime now = LocalDateTime.now();
         switch (outcome.type()) {
             case SENT -> update(notice.getId(), row -> row.markSent(outcome.providerMessageId(), now));
             case RETRYABLE -> update(notice.getId(), row -> row.markRetryableFailure(outcome.error(), now));
             case PERMANENT -> update(notice.getId(), row -> row.markFailed(outcome.error()));
+            case NOT_ATTEMPTED -> throw new IllegalStateException("위에서 처리했다");
         }
     }
 

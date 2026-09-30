@@ -18,7 +18,10 @@ import com.back.facepick.auth.infrastructure.CredentialJpaRepository;
 import com.back.facepick.auth.infrastructure.CredentialRepositoryImpl;
 import com.back.facepick.global.config.data.JpaAuditingConfig;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -90,6 +93,8 @@ class AlbumExpiryNoticeSenderIntegrationTest {
 
     @AfterEach
     void cleanUp() {
+        fakeMailSender.available(true);
+        fakeMailSender.respond(mail -> MailSendOutcome.sent("re_default"));
         noticeJpaRepository.deleteAll();
         albumJpaRepository.deleteAll();
         credentialJpaRepository.deleteAll();
@@ -104,6 +109,21 @@ class AlbumExpiryNoticeSenderIntegrationTest {
         return noticeRepository
                 .save(AlbumExpiryNotice.create(album.getId(), 1L, now.minusMinutes(1)))
                 .getId();
+    }
+
+    // 같은 앨범에 이메일 있는 멤버 여러 명과 각자의 알림
+    private List<Long> givenDueNotices(int count) {
+        LocalDateTime now = LocalDateTime.now();
+        Album album = albumRepository.save(Album.create(
+                1L, "제주 여행", now.minusDays(25), UUID.randomUUID().toString().substring(0, 22)));
+        List<Long> ids = new ArrayList<>();
+        for (long userId = 1; userId <= count; userId++) {
+            credentialRepository.save(CredentialFixture.credential(userId, "member" + userId + "@example.com"));
+            ids.add(noticeRepository
+                    .save(AlbumExpiryNotice.create(album.getId(), userId, now.minusMinutes(1)))
+                    .getId());
+        }
+        return ids;
     }
 
     private AlbumExpiryNotice reload(Long noticeId) {
@@ -171,13 +191,68 @@ class AlbumExpiryNoticeSenderIntegrationTest {
         assertThat(saved.getLastError()).isEqualTo("503");
     }
 
+    @Test
+    @DisplayName("서킷 OPEN - 선점하지 않아 행이 그대로 남는다")
+    void skipsRunWhenUnavailable() {
+        // given
+        Long noticeId = givenDueNotice();
+        AlbumExpiryNotice before = reload(noticeId);
+        fakeMailSender.available(false);
+
+        // when
+        sender.send();
+
+        // then
+        AlbumExpiryNotice after = reload(noticeId);
+        assertThat(after.getAttempts()).isZero();
+        assertThat(after.getNextAttemptAt()).isEqualTo(before.getNextAttemptAt());
+    }
+
+    @Test
+    @DisplayName("배치 도중 서킷이 열리면 보낸 행은 SENT, 보내지 않은 행은 시도 횟수 0 으로 retryAt 에 남는다")
+    void mixedBatchKeepsAttemptsForUnattempted() {
+        // given
+        List<Long> ids = givenDueNotices(3);
+        LocalDateTime retryAt = LocalDateTime.now().plusSeconds(60).withNano(0);
+        AtomicInteger calls = new AtomicInteger();
+        fakeMailSender.respond(mail ->
+                calls.incrementAndGet() == 1 ? MailSendOutcome.sent("re_1") : MailSendOutcome.notAttempted(retryAt));
+
+        // when
+        sender.send();
+
+        // then
+        List<AlbumExpiryNotice> saved = ids.stream().map(this::reload).toList();
+        assertThat(saved)
+                .filteredOn(n -> n.getStatus() == AlbumExpiryNoticeStatus.SENT)
+                .hasSize(1)
+                .allSatisfy(n -> assertThat(n.getAttempts()).isEqualTo(1));
+        assertThat(saved)
+                .filteredOn(n -> n.getStatus() == AlbumExpiryNoticeStatus.PENDING)
+                .hasSize(2)
+                .allSatisfy(n -> {
+                    assertThat(n.getAttempts()).isZero();
+                    assertThat(n.getNextAttemptAt()).isEqualTo(retryAt);
+                });
+    }
+
     static class FakeMailSender implements ExpiryMailSender {
         private Function<ExpiryMail, MailSendOutcome> behavior = mail -> MailSendOutcome.sent("re_default");
+        private boolean available = true;
         private boolean transactionActiveDuringSend;
         private AlbumExpiryNotice seenDuringSend;
 
         void respond(Function<ExpiryMail, MailSendOutcome> behavior) {
             this.behavior = behavior;
+        }
+
+        void available(boolean available) {
+            this.available = available;
+        }
+
+        @Override
+        public boolean isAvailable() {
+            return available;
         }
 
         @Override
