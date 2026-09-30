@@ -12,14 +12,12 @@ import com.back.facepick.photo.application.dto.result.PhotoUploadResult;
 import com.back.facepick.photo.application.dto.result.PhotoUploadResult.FileResult;
 import com.back.facepick.photo.domain.Photo;
 import com.back.facepick.photo.domain.PhotoDeletePolicy;
-import com.back.facepick.photo.domain.PhotoOutbox;
-import com.back.facepick.photo.domain.PhotoOutboxRepository;
+import com.back.facepick.photo.domain.PhotoPipeline;
 import com.back.facepick.photo.domain.PhotoRepository;
 import com.back.facepick.photo.domain.PhotoStorage;
 import com.back.facepick.photo.domain.PhotoStorageDeletion;
 import com.back.facepick.photo.domain.PhotoStorageDeletionRepository;
 import com.back.facepick.photo.domain.PhotoUploadPolicy;
-import com.back.facepick.photo.domain.event.PhotoUploadedEvent;
 import com.back.facepick.photo.domain.event.PhotosDeletedEvent;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -32,18 +30,16 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.databind.json.JsonMapper;
 
 @Service
 @RequiredArgsConstructor
 public class PhotoCommandService {
     private final PhotoRepository photoRepository;
-    private final PhotoOutboxRepository photoOutboxRepository;
     private final PhotoStorageDeletionRepository photoStorageDeletionRepository;
     private final PhotoStorage photoStorage;
     private final AlbumQueryApi albumQueryApi;
     private final ApplicationEventPublisher eventPublisher;
-    private final JsonMapper jsonMapper;
+    private final PhotoPipeline photoPipeline;
 
     @Transactional
     public PhotoUploadResult createPhotoUploads(Long userId, Long albumId, PhotoUploadCommand command) {
@@ -81,19 +77,9 @@ public class PhotoCommandService {
         LocalDateTime now = LocalDateTime.now();
         Photo photo = photoRepository.getById(photoId);
         Long storedByteSize = photoStorage.findObjectSize(photo.getStorageKey()).orElse(null);
-        // 이미 완료된 사진이면 false 라 메시지를 다시 쌓지 않는다 (앱 재시도에 안전).
+        // 이미 완료된 사진이면 false 라 트랜잭션 안에서 할 일(outbox)을 다시 하지 않는다 (앱 재시도에 안전).
         if (photo.complete(userId, storedByteSize, now)) {
-            PhotoUploadedEvent event = new PhotoUploadedEvent(
-                    photo.getId(),
-                    photo.getAlbumId(),
-                    photo.getStorageKey(),
-                    photo.getContentType(),
-                    photo.getByteSize());
-            photoOutboxRepository.save(PhotoOutbox.create(
-                    PhotoUploadedEvent.TOPIC,
-                    String.valueOf(photo.getAlbumId()),
-                    jsonMapper.writeValueAsString(event),
-                    now));
+            photoPipeline.onCompleted(photo, now);
         }
         return PhotoCompleteResult.from(photo);
     }

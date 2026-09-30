@@ -9,6 +9,7 @@ from confluent_kafka import Consumer, Producer
 from PIL import Image
 
 from thumbnail_worker.errors import PermanentError
+from thumbnail_worker.messages import PreviewReady
 from thumbnail_worker.photo_repository import PhotoRepository
 from thumbnail_worker.processor import PhotoProcessor
 from thumbnail_worker.storage import PhotoStorage
@@ -166,3 +167,38 @@ def test_broken_original_is_permanent_failure(
         processor.handle(uploaded_message(photo_id, unique_album_id, storage_key))
     assert error.value.error_type == "UNDECODABLE_IMAGE"
     assert PhotoRepository(config.database_url).find(photo_id).processed_at is None
+
+
+def test_process_returns_preview_ready_without_publishing(
+    processor, config, s3_client, insert_photo, unique_album_id, topic, cleanup_keys
+):
+    photo_id, storage_key = insert_photo(unique_album_id)
+    thumbnail_key, preview_key = derived_keys(storage_key)
+    cleanup_keys.extend([storage_key, thumbnail_key, preview_key])
+    s3_client.put_object(Bucket=config.s3_bucket, Key=storage_key, Body=jpeg())
+
+    result = processor.process(photo_id)
+
+    assert result == PreviewReady(photo_id, unique_album_id, preview_key, 3000, 2000)
+    assert PhotoRepository(config.database_url).find(photo_id).processed_at is not None
+    assert consume_all(config, topic, timeout_seconds=3) == []
+
+
+def test_process_without_producer_returns_saved_values(config, insert_photo, unique_album_id):
+    photo_id, _ = insert_photo(unique_album_id)
+    PhotoRepository(config.database_url).mark_processed(
+        photo_id, "t.jpg", "p.jpg", 640, 480, None, datetime.now()
+    )
+    # HTTP 모드처럼 producer 없이 만든다.
+    processor = PhotoProcessor(
+        PhotoRepository(config.database_url),
+        PhotoStorage(
+            config.s3_endpoint, config.s3_access_key, config.s3_secret_key, config.s3_bucket
+        ),
+    )
+
+    assert processor.process(photo_id) == PreviewReady(photo_id, unique_album_id, "p.jpg", 640, 480)
+
+
+def test_process_returns_none_for_missing_row(processor):
+    assert processor.process(987_654_321_000) is None

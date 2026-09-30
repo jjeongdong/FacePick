@@ -3,6 +3,8 @@ package com.back.facepick.auth.infrastructure;
 import com.back.facepick.auth.domain.Credential;
 import com.back.facepick.auth.domain.CredentialRepository;
 import com.back.facepick.auth.domain.exception.AuthEmailAlreadyExistsException;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -27,5 +29,10 @@ public class CredentialRepositoryImpl implements CredentialRepository {
     @Override
     public Optional<Credential> findByEmail(String email) {
         return credentialJpaRepository.findByEmail(email);
+    }
+
+    @Override
+    public List<Credential> findAllByUserIds(Collection<Long> userIds) {
+        return credentialJpaRepository.findAllByUserIdIn(userIds);
     }
 }

@@ -5,3 +5,6 @@ __pycache__/
 /docs/
 .idea/
 frontend/
+
+# 동기 vs 이벤트 부하 측정 도구·사진·결과 (로컬에만 둔다)
+loadtest/

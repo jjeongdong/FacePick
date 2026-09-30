@@ -15,6 +15,7 @@ import com.back.facepick.global.authorization.resolver.AuthUserArgumentResolver;
 import com.back.facepick.global.error.GlobalExceptionHandler;
 import com.back.facepick.global.response.CursorPageResult;
 import com.back.facepick.photo.application.PhotoCommandService;
+import com.back.facepick.photo.application.PhotoCompleteService;
 import com.back.facepick.photo.application.PhotoQueryService;
 import com.back.facepick.photo.application.dto.command.PhotoDeleteCommand;
 import com.back.facepick.photo.application.dto.command.PhotoDownloadCommand;
@@ -34,6 +35,7 @@ import com.back.facepick.photo.domain.PhotoSelfieStatus;
 import com.back.facepick.photo.domain.PhotoStatus;
 import com.back.facepick.photo.domain.exception.PhotoFileMissingException;
 import com.back.facepick.photo.domain.exception.PhotoNotDeletableException;
+import com.back.facepick.photo.domain.exception.PhotoProcessingUnavailableException;
 import com.back.facepick.photo.domain.exception.PhotoSelfieNotReadyException;
 import com.back.facepick.photo.domain.exception.PhotoViewNotAlbumMemberException;
 import java.time.LocalDateTime;
@@ -161,11 +163,15 @@ class PhotoControllerTest {
     @Mock
     private PhotoQueryService photoQueryService;
 
+    @Mock
+    private PhotoCompleteService photoCompleteService;
+
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new PhotoController(photoCommandService, photoQueryService))
+        mockMvc = MockMvcBuilders.standaloneSetup(
+                        new PhotoController(photoCommandService, photoQueryService, photoCompleteService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .setCustomArgumentResolvers(new AuthUserArgumentResolver())
                 .build();
@@ -241,7 +247,7 @@ class PhotoControllerTest {
     @DisplayName("POST /api/photos/{photoId}/complete 는 200 과 UPLOADED")
     void completePhoto() throws Exception {
         // given
-        given(photoCommandService.completePhoto(1L, 12L))
+        given(photoCompleteService.completePhoto(1L, 12L))
                 .willReturn(new PhotoCompleteResult(12L, PhotoStatus.UPLOADED));
 
         // when & then
@@ -255,12 +261,24 @@ class PhotoControllerTest {
     @DisplayName("파일이 아직 없으면 409 PHOTO_FILE_MISSING")
     void completePhotoRejectsMissingFile() throws Exception {
         // given
-        given(photoCommandService.completePhoto(1L, 12L)).willThrow(new PhotoFileMissingException());
+        given(photoCompleteService.completePhoto(1L, 12L)).willThrow(new PhotoFileMissingException());
 
         // when & then
         mockMvc.perform(post("/api/photos/12/complete"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("PHOTO_FILE_MISSING"));
+    }
+
+    @Test
+    @DisplayName("사진 처리 서버에 연결할 수 없으면 502 PHOTO_PROCESSING_UNAVAILABLE")
+    void completePhotoReportsUnavailableProcessing() throws Exception {
+        // given
+        given(photoCompleteService.completePhoto(1L, 12L)).willThrow(new PhotoProcessingUnavailableException());
+
+        // when & then
+        mockMvc.perform(post("/api/photos/12/complete"))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.code").value("PHOTO_PROCESSING_UNAVAILABLE"));
     }
 
     @Test
