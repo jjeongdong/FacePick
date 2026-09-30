@@ -249,6 +249,46 @@ class PhotoRepositoryImplQueryTest {
         assertThat(existsAfter).isFalse();
     }
 
+    @Test
+    @DisplayName("정리용 ID 조회 - 이 앨범의 사진을 상태·용도와 관계없이 photo_id 순으로 limit 개")
+    void findsIdsForPurgeRegardlessOfStatusAndPurpose() {
+        // given
+        Long albumId = 900L;
+        Photo pending = Photo.create(albumId, 1L, hash(901), 1000L, "image/jpeg");
+        Photo uploaded = Photo.create(albumId, 1L, hash(902), 1000L, "image/jpeg");
+        uploaded.complete(1L, 1000L, T);
+        Photo selfie = Photo.createSelfie(albumId, 2L, hash(903), 1000L, "image/jpeg", true);
+        Photo otherAlbum = Photo.create(901L, 1L, hash(904), 1000L, "image/jpeg");
+        photoRepository.saveAll(List.of(pending, uploaded, selfie, otherAlbum));
+        flushAndClear();
+
+        // when
+        List<Long> all = photoRepository.findIdsForPurge(albumId, 10);
+        List<Long> limited = photoRepository.findIdsForPurge(albumId, 2);
+
+        // then
+        assertThat(all).containsExactly(pending.getId(), uploaded.getId(), selfie.getId());
+        assertThat(limited).containsExactly(pending.getId(), uploaded.getId());
+    }
+
+    @Test
+    @DisplayName("ID 일괄 삭제 - 주어진 사진만 지운다")
+    void deletesAllByIds() {
+        // given
+        Long albumId = 902L;
+        Photo deleted = Photo.create(albumId, 1L, hash(911), 1000L, "image/jpeg");
+        Photo kept = Photo.create(albumId, 1L, hash(912), 1000L, "image/jpeg");
+        photoRepository.saveAll(List.of(deleted, kept));
+        flushAndClear();
+
+        // when
+        photoRepository.deleteAllByIds(List.of(deleted.getId()));
+        flushAndClear();
+
+        // then
+        assertThat(photoRepository.findIdsForPurge(albumId, 10)).containsExactly(kept.getId());
+    }
+
     private static Photo uploaded(Long albumId, String hash, LocalDateTime uploadedAt) {
         Photo photo = Photo.create(albumId, 1L, hash, 1000L, "image/jpeg");
         photo.complete(1L, 1000L, uploadedAt);

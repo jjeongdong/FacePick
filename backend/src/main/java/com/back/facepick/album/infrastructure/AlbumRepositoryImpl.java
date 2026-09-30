@@ -4,9 +4,11 @@ import com.back.facepick.album.domain.Album;
 import com.back.facepick.album.domain.AlbumRepository;
 import com.back.facepick.album.domain.exception.AlbumInviteNotFoundException;
 import com.back.facepick.album.domain.exception.AlbumNotFoundException;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -32,5 +34,15 @@ public class AlbumRepositoryImpl implements AlbumRepository {
     @Override
     public List<Album> findAllByIds(Collection<Long> albumIds) {
         return albumJpaRepository.findAllById(albumIds);
+    }
+
+    @Override
+    public List<Long> findExpiredIds(LocalDateTime now, int limit) {
+        return albumJpaRepository.findExpiredIds(now, Limit.of(limit));
+    }
+
+    @Override
+    public int deleteExpired(Long albumId, LocalDateTime now) {
+        return albumJpaRepository.deleteExpired(albumId, now);
     }
 }

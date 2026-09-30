@@ -7,6 +7,8 @@ import com.back.facepick.album.application.dto.api.AlbumInfo;
 import com.back.facepick.album.domain.AlbumMemberRepository;
 import com.back.facepick.album.domain.AlbumRepository;
 import com.back.facepick.album.fixture.AlbumFixture;
+import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -57,5 +59,16 @@ class AlbumQueryApiTest {
 
         // then
         assertThat(info).isEqualTo(new AlbumInfo(10L, 1L, AlbumFixture.NOW.plusDays(30)));
+    }
+
+    @Test
+    @DisplayName("만료 앨범 ID 를 리포지토리에서 그대로 받아 준다")
+    void findExpiredAlbumIds() {
+        // given
+        LocalDateTime now = LocalDateTime.of(2026, 9, 1, 12, 0);
+        given(albumRepository.findExpiredIds(now, 10)).willReturn(List.of(3L, 1L));
+
+        // when & then
+        assertThat(albumQueryApi.findExpiredAlbumIds(now, 10)).containsExactly(3L, 1L);
     }
 }

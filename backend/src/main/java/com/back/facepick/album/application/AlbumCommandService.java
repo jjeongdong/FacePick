@@ -14,6 +14,7 @@ import com.back.facepick.album.domain.InviteCodeGenerator;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -46,5 +47,11 @@ public class AlbumCommandService {
             albumMemberRepository.save(album.join(userId, LocalDateTime.now()));
         }
         return AlbumJoinResult.from(album);
+    }
+
+    // 만료 앨범의 사진 정리와 한 트랜잭션이어야, 사진은 남았는데 앨범만 사라지거나 그 반대가 되지 않는다.
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void deleteExpiredAlbum(Long albumId, LocalDateTime now) {
+        albumRepository.deleteExpired(albumId, now);
     }
 }

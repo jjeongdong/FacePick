@@ -68,6 +68,16 @@ public class PhotoRepositoryImpl implements PhotoRepository {
     }
 
     @Override
+    public List<Long> findIdsForPurge(Long albumId, int limit) {
+        return photoJpaRepository.findIdsForPurge(albumId, limit);
+    }
+
+    @Override
+    public void deleteAllByIds(Collection<Long> photoIds) {
+        photoJpaRepository.deleteAllByIdIn(photoIds);
+    }
+
+    @Override
     public boolean existsByStorageKey(String storageKey) {
         return photoJpaRepository.existsByStorageKey(storageKey);
     }

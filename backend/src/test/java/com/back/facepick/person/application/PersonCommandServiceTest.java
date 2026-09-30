@@ -68,5 +68,32 @@ class PersonCommandServiceTest {
             then(personFaceRepository).should().deleteAnalysesOfPhotos(ALBUM_ID, PHOTO_IDS);
             then(personFaceRepository).should(never()).cleanUpPersons(any(), any());
         }
+
+        @Test
+        @DisplayName("사진 ID 가 비어 있으면 잠그지도 지우지도 않는다 (IN () SQL 오류 방지)")
+        void doesNothingForEmptyPhotoIds() {
+            // when
+            personCommandService.deletePhotoFaces(ALBUM_ID, List.of());
+
+            // then
+            then(personFaceRepository).shouldHaveNoInteractions();
+        }
+    }
+
+    @Nested
+    @DisplayName("앨범 얼굴 데이터 파기")
+    class PurgeAlbum {
+
+        @Test
+        @DisplayName("앨범을 먼저 잠근 뒤 그 앨범의 얼굴 데이터를 모두 지운다")
+        void locksThenDeletesAll() {
+            // when
+            personCommandService.purgeAlbum(ALBUM_ID);
+
+            // then
+            InOrder order = inOrder(personFaceRepository);
+            order.verify(personFaceRepository).lockAlbum(ALBUM_ID);
+            order.verify(personFaceRepository).deleteAllOfAlbum(ALBUM_ID);
+        }
     }
 }
