@@ -55,7 +55,7 @@ facepick:
     thumbnail-read-timeout-millis: 30000
     face-read-timeout-millis: 60000
   mail:
-    # 비어 있으면 메일을 보내지 않고 로그만 남긴다 (LoggingExpiryMailSender)
+    # 비어 있으면 메일을 보내지 않고 알림을 FAILED 로 남긴다 (LoggingExpiryMailSender, 기동 시 WARN)
     resend-api-key: ${RESEND_API_KEY:}
     base-url: https://api.resend.com
     # 도메인 인증 전에는 Resend 테스트 주소로만 보낼 수 있고, 받는 사람도 Resend 계정 이메일만 된다.
@@ -71,5 +71,8 @@ facepick:
       scan-interval-millis: 3600000
       send-interval-millis: 60000
       batch-size: 20
-      # 선점한 행을 다른 발송기가 다시 잡지 않는 시간. batch-size × 읽기 타임아웃(20 × 5초)보다 길어야 한다.
+      # 선점한 행을 다른 발송기가 다시 잡지 않는 시간.
+      # batch-size × (연결 + 읽기 타임아웃 + send-pause) = 20 × 7.5초 = 150초보다 길어야 한다.
       lease-minutes: 5
+      # 메일 한 통을 보낸 뒤 쉬는 시간. Resend 초당 요청 한도(429)에 걸리지 않게 한다.
+      send-pause-millis: 500
