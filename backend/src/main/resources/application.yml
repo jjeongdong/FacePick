@@ -49,6 +49,16 @@ facepick:
     connect-timeout-millis: 2000
     thumbnail-read-timeout-millis: 30000
     face-read-timeout-millis: 60000
+  mail:
+    # 비어 있으면 메일을 보내지 않고 로그만 남긴다 (LoggingExpiryMailSender)
+    resend-api-key: ${RESEND_API_KEY:}
+    base-url: https://api.resend.com
+    # 도메인 인증 전에는 Resend 테스트 주소로만 보낼 수 있고, 받는 사람도 Resend 계정 이메일만 된다.
+    from: "facepick <onboarding@resend.dev>"
+    # 메일의 앨범 링크 앞부분 (프론트 주소)
+    app-base-url: http://localhost:5173
+    connect-timeout-millis: 2000
+    read-timeout-millis: 5000
   album:
     expiry-notice:
       # 만료 이만큼 전부터 알림 대상이 된다 (PRD: 7일 전 알림)
