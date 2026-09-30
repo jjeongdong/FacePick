@@ -196,4 +196,68 @@ class AlbumExpiryNoticeTest {
         assertThat(notice.getStatus()).isEqualTo(AlbumExpiryNoticeStatus.SKIPPED);
         assertThat(notice.getLastError()).isEqualTo("앨범이 없거나 이미 만료됨");
     }
+
+    @Nested
+    @DisplayName("releaseUnattempted - 서킷이 열려 보내지 않은 선점을 되돌린다")
+    class ReleaseUnattempted {
+
+        @Test
+        @DisplayName("선점으로 올린 시도 횟수를 되돌리고 다음 시도를 retryAt 으로 미룬다")
+        void restoresAttemptAndDefers() {
+            // given
+            AlbumExpiryNotice notice = AlbumExpiryNoticeFixture.pending(42L, 10L, 1L);
+            notice.claim(NOW, LEASE);
+            LocalDateTime retryAt = NOW.plusSeconds(60);
+
+            // when
+            notice.releaseUnattempted(retryAt);
+
+            // then
+            assertThat(notice.getAttempts()).isZero();
+            assertThat(notice.getNextAttemptAt()).isEqualTo(retryAt);
+            assertThat(notice.getStatus()).isEqualTo(AlbumExpiryNoticeStatus.PENDING);
+        }
+
+        @Test
+        @DisplayName("이전 실패로 쌓인 시도 횟수는 그대로 둔다")
+        void keepsEarlierAttempts() {
+            // given
+            AlbumExpiryNotice notice = AlbumExpiryNoticeFixture.pending(42L, 10L, 1L);
+            notice.claim(NOW, LEASE);
+            notice.markRetryableFailure("503", NOW);
+            notice.claim(NOW.plusMinutes(1), LEASE);
+
+            // when
+            notice.releaseUnattempted(NOW.plusMinutes(2));
+
+            // then
+            assertThat(notice.getAttempts()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("선점하지 않은 행이어도 시도 횟수는 0 아래로 내려가지 않는다")
+        void neverBelowZero() {
+            // given
+            AlbumExpiryNotice notice = AlbumExpiryNoticeFixture.pending(42L, 10L, 1L);
+
+            // when
+            notice.releaseUnattempted(NOW.plusSeconds(60));
+
+            // then
+            assertThat(notice.getAttempts()).isZero();
+        }
+
+        @Test
+        @DisplayName("PENDING 이 아니면 되돌릴 수 없다")
+        void rejectsNonPending() {
+            // given
+            AlbumExpiryNotice notice = AlbumExpiryNoticeFixture.pending(42L, 10L, 1L);
+            notice.claim(NOW, LEASE);
+            notice.markSent("re_1", NOW);
+
+            // when & then
+            assertThatThrownBy(() -> notice.releaseUnattempted(NOW.plusSeconds(60)))
+                    .isInstanceOf(AlbumExpiryNoticeNotPendingException.class);
+        }
+    }
 }

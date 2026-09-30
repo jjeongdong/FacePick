@@ -117,6 +117,13 @@ public class AlbumExpiryNotice extends BaseTimeEntity {
         this.lastError = truncate(reason);
     }
 
+    // 서킷이 열려 호출하지 않은 선점을 되돌린다. 보내지 않았으니 시도 횟수에 넣지 않는다.
+    public void releaseUnattempted(LocalDateTime retryAt) {
+        requirePending();
+        this.attempts = Math.max(attempts - 1, 0);
+        this.nextAttemptAt = retryAt;
+    }
+
     // 재시도해도 같은 값이어야 Resend 가 이미 보낸 메일을 다시 보내지 않는다.
     // notice_id 가 아니라 행마다 무작위 값을 써서, DB 초기화나 다른 환경과 Resend 계정을 함께 써도 키가 겹치지 않는다.
     public String idempotencyKey() {

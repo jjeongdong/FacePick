@@ -60,6 +60,7 @@ class AlbumExpiryNoticeSenderTest {
                 20,
                 5,
                 0);
+        given(mailSender.isAvailable()).willReturn(true);
     }
 
     // 만료까지 5일 남은 앨범 (생성 25일 전)
@@ -89,7 +90,7 @@ class AlbumExpiryNoticeSenderTest {
         // then
         then(albumRepository).shouldHaveNoInteractions();
         then(authQueryApi).shouldHaveNoInteractions();
-        then(mailSender).shouldHaveNoInteractions();
+        then(mailSender).should(never()).send(any());
     }
 
     @Test
@@ -269,5 +270,37 @@ class AlbumExpiryNoticeSenderTest {
         // then
         assertThat(Duration.ofNanos(System.nanoTime() - started)).isGreaterThanOrEqualTo(Duration.ofMillis(200));
         assertThat(notices).allMatch(n -> n.getStatus() == AlbumExpiryNoticeStatus.SENT);
+    }
+
+    @Test
+    @DisplayName("메일 서비스를 쓸 수 없으면(서킷 OPEN) 선점하지 않고 회차를 끝낸다")
+    void skipsRunWhenUnavailable() {
+        // given
+        given(mailSender.isAvailable()).willReturn(false);
+
+        // when
+        sender.send();
+
+        // then
+        then(noticeRepository).shouldHaveNoInteractions();
+        then(mailSender).should(never()).send(any());
+    }
+
+    @Test
+    @DisplayName("보내지 않은 결과면 시도 횟수를 되돌리고 retryAt 에 다시 본다")
+    void releasesUnattempted() {
+        // given
+        AlbumExpiryNotice notice = givenDue(liveAlbum(), "me@example.com");
+        LocalDateTime retryAt = LocalDateTime.now().plusSeconds(60);
+        given(mailSender.send(any())).willReturn(MailSendOutcome.notAttempted(retryAt));
+
+        // when
+        sender.send();
+
+        // then
+        assertThat(notice.getStatus()).isEqualTo(AlbumExpiryNoticeStatus.PENDING);
+        assertThat(notice.getAttempts()).isZero();
+        assertThat(notice.getNextAttemptAt()).isEqualTo(retryAt);
+        assertThat(notice.getLastError()).isNull();
     }
 }

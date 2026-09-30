@@ -1,5 +1,6 @@
 package com.back.facepick.photo.application;
 
+import com.back.facepick.global.config.scheduling.SchedulerNames;
 import com.back.facepick.photo.domain.PhotoEventPublisher;
 import com.back.facepick.photo.domain.PhotoOutbox;
 import com.back.facepick.photo.domain.PhotoOutboxRepository;
@@ -24,7 +25,7 @@ public class PhotoOutboxRelay {
     private final PhotoEventPublisher photoEventPublisher;
 
     // 실패한 행에서 멈춰야 같은 앨범(같은 키) 메시지 순서가 뒤바뀌지 않는다.
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedDelay = 1000, scheduler = SchedulerNames.CORE)
     @Transactional
     public void relay() {
         for (PhotoOutbox outbox : photoOutboxRepository.findUnpublished(BATCH_SIZE)) {

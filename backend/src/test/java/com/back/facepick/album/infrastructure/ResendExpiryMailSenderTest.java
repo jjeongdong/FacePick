@@ -1,6 +1,8 @@
 package com.back.facepick.album.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.client.ExpectedCount.never;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
@@ -11,8 +13,11 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.back.facepick.album.domain.ExpiryMail;
 import com.back.facepick.album.domain.MailSendOutcome;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,7 +40,10 @@ class ResendExpiryMailSenderTest {
     private static final ExpiryMail MAIL = new ExpiryMail(
             "album-expiry-notice-42", "me@example.com", 13L, "제주 여행", LocalDateTime.of(2026, 10, 7, 15, 0));
 
+    private static final Duration OPEN_WAIT = Duration.ofSeconds(60);
+
     private MockRestServiceServer server;
+    private CircuitBreaker circuitBreaker;
     private ResendExpiryMailSender sender;
 
     @BeforeEach
@@ -44,8 +52,32 @@ class ResendExpiryMailSenderTest {
                 .baseUrl("https://api.resend.test")
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer re_test_key");
         server = MockRestServiceServer.bindTo(builder).build();
+        // 운영 설정과 같은 값. 자동 전환은 테스트에서 직접 전환하므로 끈다.
+        circuitBreaker = CircuitBreaker.of(
+                "resend-test",
+                CircuitBreakerConfig.custom()
+                        .slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
+                        .slidingWindowSize(10)
+                        .minimumNumberOfCalls(5)
+                        .failureRateThreshold(50)
+                        .slowCallDurationThreshold(Duration.ofSeconds(3))
+                        .slowCallRateThreshold(50)
+                        .waitDurationInOpenState(OPEN_WAIT)
+                        .permittedNumberOfCallsInHalfOpenState(2)
+                        .build());
         sender = new ResendExpiryMailSender(
-                builder.build(), "facepick <onboarding@resend.dev>", new ExpiryMailTemplate("http://localhost:5173"));
+                builder.build(),
+                "facepick <onboarding@resend.dev>",
+                new ExpiryMailTemplate("http://localhost:5173"),
+                circuitBreaker,
+                OPEN_WAIT);
+    }
+
+    private void timeouts(int count) {
+        for (int i = 0; i < count; i++) {
+            server.expect(requestTo("https://api.resend.test/emails"))
+                    .andRespond(withException(new SocketTimeoutException("Read timed out")));
+        }
     }
 
     private void respondWith(int status, String body) {
@@ -158,5 +190,149 @@ class ResendExpiryMailSenderTest {
 
         // then
         assertThat(output).contains("403").contains("validation_error").doesNotContain("owner@example.com");
+    }
+
+    @Test
+    @DisplayName("타임아웃 5건이면 서킷이 열리고, 다음 발송은 HTTP 요청 없이 보내지 않은 결과가 된다")
+    void opensAfterTimeouts() {
+        // given
+        timeouts(5);
+        for (int i = 0; i < 5; i++) {
+            sender.send(MAIL);
+        }
+        server.verify();
+        server.reset();
+        server.expect(never(), requestTo("https://api.resend.test/emails"));
+        LocalDateTime before = LocalDateTime.now();
+
+        // when
+        MailSendOutcome outcome = sender.send(MAIL);
+
+        // then
+        assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
+        assertThat(sender.isAvailable()).isFalse();
+        assertThat(outcome.type()).isEqualTo(MailSendOutcome.Type.NOT_ATTEMPTED);
+        assertThat(outcome.retryAt()).isAfterOrEqualTo(before.plus(OPEN_WAIT));
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("5xx 도 서킷 실패로 센다")
+    void serverErrorsOpen() {
+        // given
+        for (int i = 0; i < 5; i++) {
+            respondWith(503, "{\"statusCode\":503,\"name\":\"x\",\"message\":\"x\"}");
+        }
+
+        // when
+        for (int i = 0; i < 5; i++) {
+            sender.send(MAIL);
+        }
+
+        // then
+        assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
+    }
+
+    @Test
+    @DisplayName("422 가 이어져도 서킷은 열리지 않는다 - 잘못된 주소는 그 요청만의 문제다")
+    void clientErrorsDoNotOpen() {
+        // given
+        for (int i = 0; i < 10; i++) {
+            respondWith(422, "{\"statusCode\":422,\"name\":\"validation_error\",\"message\":\"x\"}");
+        }
+
+        // when
+        for (int i = 0; i < 10; i++) {
+            sender.send(MAIL);
+        }
+
+        // then
+        assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+        assertThat(sender.isAvailable()).isTrue();
+    }
+
+    @Test
+    @DisplayName("429 는 서킷에 기록하지 않는다 - 한도는 기존 백오프가 맡는다")
+    void rateLimitIsNotRecorded() {
+        // given
+        for (int i = 0; i < 10; i++) {
+            respondWith(429, "{\"statusCode\":429,\"name\":\"rate_limit_exceeded\",\"message\":\"x\"}");
+        }
+
+        // when
+        for (int i = 0; i < 10; i++) {
+            sender.send(MAIL);
+        }
+
+        // then
+        assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+        assertThat(circuitBreaker.getMetrics().getNumberOfBufferedCalls()).isZero();
+    }
+
+    @Test
+    @DisplayName("HALF_OPEN 에서 시험 호출 2건이 성공하면 다시 닫힌다")
+    void halfOpenClosesAfterTwoSuccesses() {
+        // given
+        circuitBreaker.transitionToOpenState();
+        circuitBreaker.transitionToHalfOpenState();
+        for (int i = 0; i < 2; i++) {
+            server.expect(requestTo("https://api.resend.test/emails"))
+                    .andRespond(withSuccess("{\"id\":\"re_ok\"}", MediaType.APPLICATION_JSON));
+        }
+
+        // when
+        sender.send(MAIL);
+        sender.send(MAIL);
+
+        // then
+        assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+    }
+
+    @Test
+    @DisplayName("HALF_OPEN 시험 호출 2건을 다 쓰면 결과가 나오기 전 추가 발송은 보내지 않은 결과가 된다")
+    void halfOpenLimitsTrialCalls() {
+        // given
+        circuitBreaker.transitionToOpenState();
+        circuitBreaker.transitionToHalfOpenState();
+        circuitBreaker.tryAcquirePermission();
+        circuitBreaker.tryAcquirePermission();
+        server.expect(never(), requestTo("https://api.resend.test/emails"));
+
+        // when
+        MailSendOutcome outcome = sender.send(MAIL);
+
+        // then
+        assertThat(outcome.type()).isEqualTo(MailSendOutcome.Type.NOT_ATTEMPTED);
+        server.verify();
+    }
+
+    @Test
+    @DisplayName("예상 못 한 예외도 서킷 실패로 기록하고 그대로 던진다 - HALF_OPEN 허가가 새지 않게")
+    void unexpectedExceptionIsRecorded() {
+        // given
+        circuitBreaker.transitionToOpenState();
+        circuitBreaker.transitionToHalfOpenState();
+        server.expect(requestTo("https://api.resend.test/emails")).andRespond(request -> {
+            throw new IllegalStateException("boom");
+        });
+
+        // when & then
+        assertThatThrownBy(() -> sender.send(MAIL)).isInstanceOf(IllegalStateException.class);
+        assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Error 가 나도 서킷 실패로 기록한다 - HALF_OPEN 허가가 새면 재시작 전까지 메일이 멈춘다")
+    void errorIsRecorded() {
+        // given
+        circuitBreaker.transitionToOpenState();
+        circuitBreaker.transitionToHalfOpenState();
+        server.expect(requestTo("https://api.resend.test/emails")).andRespond(request -> {
+            throw new StackOverflowError("boom");
+        });
+
+        // when & then
+        assertThatThrownBy(() -> sender.send(MAIL)).isInstanceOf(StackOverflowError.class);
+        assertThat(circuitBreaker.getMetrics().getNumberOfFailedCalls()).isEqualTo(1);
     }
 }
