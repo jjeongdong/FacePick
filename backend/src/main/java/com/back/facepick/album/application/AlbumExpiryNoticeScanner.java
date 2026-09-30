@@ -1,6 +1,7 @@
 package com.back.facepick.album.application;
 
 import com.back.facepick.album.domain.AlbumExpiryNoticeRepository;
+import com.back.facepick.global.config.scheduling.SchedulerNames;
 import java.time.LocalDateTime;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,7 +24,9 @@ public class AlbumExpiryNoticeScanner {
         this.daysBefore = daysBefore;
     }
 
-    @Scheduled(fixedDelayString = "${facepick.album.expiry-notice.scan-interval-millis}")
+    @Scheduled(
+            fixedDelayString = "${facepick.album.expiry-notice.scan-interval-millis}",
+            scheduler = SchedulerNames.EXTERNAL)
     @Transactional
     public void scan() {
         LocalDateTime now = LocalDateTime.now();

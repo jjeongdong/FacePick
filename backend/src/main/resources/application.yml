@@ -8,12 +8,6 @@ spring:
     active: local
   lifecycle:
     timeout-per-shutdown-phase: 30s
-  task:
-    scheduling:
-      pool:
-        # 만료 알림 발송기가 외부 API 를 기다리는 동안(최대 batch-size × 읽기 타임아웃), 앨범 정리가 사진을 지우는 동안
-        # outbox relay·cleaner 가 멈추지 않게 한다.
-        size: 4
   jpa:
     open-in-view: false
     hibernate:
@@ -46,6 +40,14 @@ jwt:
   refresh-expiration-millis: 2592000000
 
 facepick:
+  # 스케줄 작업을 외부 의존성별 풀로 나눈다 (SchedulerNames). 크기 = 그 풀의 작업 수.
+  scheduling:
+    # outbox relay
+    core-pool-size: 1
+    # 만료 알림 스캐너·발송기 (Resend)
+    external-pool-size: 2
+    # 사진 파일 정리·앨범 파일 정리·만료 앨범 삭제 (S3)
+    storage-pool-size: 3
   photo:
     album-purge:
       # 만료된 앨범을 이 간격으로 찾아 지운다 (PRD: 30일 뒤 삭제). 만료 즉시 대상이다.

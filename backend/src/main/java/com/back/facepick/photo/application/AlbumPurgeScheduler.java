@@ -1,6 +1,7 @@
 package com.back.facepick.photo.application;
 
 import com.back.facepick.album.application.AlbumQueryApi;
+import com.back.facepick.global.config.scheduling.SchedulerNames;
 import java.time.LocalDateTime;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,7 +31,7 @@ public class AlbumPurgeScheduler {
     }
 
     // 한 앨범이 실패해도(롤백된 조각만 남는다) 다음 앨범은 계속 지우고, 실패한 앨범은 다음 실행에서 남은 사진부터 이어서 한다.
-    @Scheduled(fixedDelayString = "${facepick.photo.album-purge.interval-millis}")
+    @Scheduled(fixedDelayString = "${facepick.photo.album-purge.interval-millis}", scheduler = SchedulerNames.STORAGE)
     public void purge() {
         for (Long albumId : albumQueryApi.findExpiredAlbumIds(LocalDateTime.now(), albumsPerRun)) {
             try {

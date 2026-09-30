@@ -1,5 +1,6 @@
 package com.back.facepick.photo.application;
 
+import com.back.facepick.global.config.scheduling.SchedulerNames;
 import com.back.facepick.photo.domain.PhotoRepository;
 import com.back.facepick.photo.domain.PhotoStorage;
 import com.back.facepick.photo.domain.PhotoStorageDeletion;
@@ -37,7 +38,7 @@ public class PhotoStorageCleaner {
     // 늦게 지우는 이유: 지운 PENDING 사진에 업로드 URL(15분)로 늦게 PUT 된 원본과,
     // 처리 중이던 썸네일 워커가 뒤늦게 올린 파일까지 함께 지우기 위해서다.
     // 파일 삭제는 순서가 필요 없어, 한 행이 실패해도 다음 행을 계속 지운다 (실패한 행은 다음 주기에 다시).
-    @Scheduled(fixedDelayString = "${storage.deletion-interval-millis}")
+    @Scheduled(fixedDelayString = "${storage.deletion-interval-millis}", scheduler = SchedulerNames.STORAGE)
     @Transactional
     public void clean() {
         LocalDateTime now = LocalDateTime.now();
