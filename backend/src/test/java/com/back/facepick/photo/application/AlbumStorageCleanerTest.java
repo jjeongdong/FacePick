@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 
 import com.back.facepick.photo.domain.AlbumStorageDeletion;
@@ -16,6 +17,7 @@ import com.back.facepick.photo.domain.PhotoStorage;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,6 +27,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.BeanUtils;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
 
 @ExtendWith(MockitoExtension.class)
 class AlbumStorageCleanerTest {
@@ -39,7 +42,9 @@ class AlbumStorageCleanerTest {
 
     @BeforeEach
     void setUp() {
-        cleaner = new AlbumStorageCleaner(albumStorageDeletionRepository, photoStorage, 20);
+        // 트랜잭션 경계는 통합 테스트(AlbumStorageCleanerIntegrationTest)가 본다. 여기서는 흐름만 본다.
+        cleaner = new AlbumStorageCleaner(
+                albumStorageDeletionRepository, photoStorage, mock(PlatformTransactionManager.class), 20);
     }
 
     @Test
@@ -49,6 +54,7 @@ class AlbumStorageCleanerTest {
         AlbumStorageDeletion deletion = deletion(7L);
         given(albumStorageDeletionRepository.findDue(any(LocalDateTime.class), eq(10)))
                 .willReturn(List.of(deletion));
+        given(albumStorageDeletionRepository.findById(7L)).willReturn(Optional.of(deletion));
 
         // when
         cleaner.clean();
@@ -70,6 +76,7 @@ class AlbumStorageCleanerTest {
         given(albumStorageDeletionRepository.findDue(any(LocalDateTime.class), eq(10)))
                 .willReturn(List.of(failing, next));
         willThrow(new IllegalStateException("storage down")).given(photoStorage).deleteByPrefix("albums/7/");
+        given(albumStorageDeletionRepository.findById(8L)).willReturn(Optional.of(next));
 
         // when
         cleaner.clean();
