@@ -60,6 +60,8 @@ dependencies {
 
     // 외부 메일 API 서킷 브레이커 (스타터 없이 core 만 — 어댑터에서 코드로 감싼다)
     implementation 'io.github.resilience4j:resilience4j-circuitbreaker:2.4.0'
+    // 가입 요청 안에서 부르는 인증 메일의 동시 호출 제한 (Tomcat 스레드 보호)
+    implementation 'io.github.resilience4j:resilience4j-bulkhead:2.4.0'
 
     // OpenAPI / Swagger
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
