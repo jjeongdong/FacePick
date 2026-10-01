@@ -13,6 +13,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import com.back.facepick.album.domain.ExpiryMail;
 import com.back.facepick.album.domain.MailSendOutcome;
+import com.back.facepick.global.infrastructure.mail.ResendClient;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import java.net.ConnectException;
@@ -66,10 +67,8 @@ class ResendExpiryMailSenderTest {
                         .permittedNumberOfCallsInHalfOpenState(2)
                         .build());
         sender = new ResendExpiryMailSender(
-                builder.build(),
-                "facepick <onboarding@resend.dev>",
+                new ResendClient(builder.build(), "facepick <onboarding@resend.dev>", circuitBreaker),
                 new ExpiryMailTemplate("http://localhost:5173"),
-                circuitBreaker,
                 OPEN_WAIT);
     }
 

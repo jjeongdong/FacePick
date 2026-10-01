@@ -16,6 +16,7 @@ class ErrorHttpStatusTest {
         "FORBIDDEN, FORBIDDEN",
         "NOT_FOUND, NOT_FOUND",
         "CONFLICT, CONFLICT",
+        "TOO_MANY_REQUESTS, TOO_MANY_REQUESTS",
         "INTERNAL, INTERNAL_SERVER_ERROR",
         "EXTERNAL, BAD_GATEWAY"
     })

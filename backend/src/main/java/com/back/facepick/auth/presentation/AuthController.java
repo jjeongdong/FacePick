@@ -4,6 +4,7 @@ import com.back.facepick.auth.application.AuthCommandService;
 import com.back.facepick.auth.application.dto.result.LoginResult;
 import com.back.facepick.auth.application.dto.result.SignUpResult;
 import com.back.facepick.auth.application.dto.result.TokenReissueResult;
+import com.back.facepick.auth.presentation.dto.request.EmailVerificationSendRequest;
 import com.back.facepick.auth.presentation.dto.request.LoginRequest;
 import com.back.facepick.auth.presentation.dto.request.LogoutRequest;
 import com.back.facepick.auth.presentation.dto.request.SignUpRequest;
@@ -21,6 +22,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AuthController implements AuthApiDocs {
     private final AuthCommandService authCommandService;
+
+    @Override
+    @PostMapping("/email-verifications")
+    public ResponseEntity<Void> sendEmailVerification(@RequestBody EmailVerificationSendRequest request) {
+        authCommandService.sendEmailVerification(request.toCommand());
+        return ResponseEntity.noContent().build();
+    }
 
     @Override
     @PostMapping("/signup")

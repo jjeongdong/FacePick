@@ -87,6 +87,14 @@ facepick:
       # 발송 주기와 같게 두어 다음 회차에 한 번 떠본다. 보내지 않은 알림도 이만큼 뒤에 다시 대상이 된다.
       open-seconds: 60
       half-open-calls: 2
+  auth:
+    verification-mail:
+      # 가입 요청(Tomcat 스레드) 안에서 Resend 를 동기로 부른다. Resend 가 느려져도 붙잡히는 요청 스레드를 이만큼으로 제한한다.
+      # 최악: max-concurrent-calls 개 스레드가 연결 + 읽기 타임아웃(7초)씩.
+      bulkhead:
+        max-concurrent-calls: 5
+        # 자리가 없으면 기다리지 않고 바로 거절한다 (기다리는 동안에도 스레드를 붙잡으므로).
+        max-wait-millis: 0
   album:
     expiry-notice:
       # 만료 이만큼 전부터 알림 대상이 된다 (PRD: 7일 전 알림)

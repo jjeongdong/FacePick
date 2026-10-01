@@ -15,6 +15,7 @@ class ErrorTypeTest {
         "FORBIDDEN, false",
         "NOT_FOUND, false",
         "CONFLICT, false",
+        "TOO_MANY_REQUESTS, false",
         "INTERNAL, true",
         "EXTERNAL, true"
     })
