@@ -41,7 +41,7 @@ public void liftUp(LocalDateTime now) { ... }
 
 ## 에러 코드와 예외
 - `{Bc}ErrorCode` enum (`domain` 패키지) implements `global.error.ErrorCode`. 값은 `ErrorType` + 한국어 메시지.
-- `ErrorType`: `INVALID`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `INTERNAL`, `EXTERNAL`(외부 서비스 장애, 502). `HttpStatus` 사용 금지.
+- `ErrorType`: `INVALID`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `TOO_MANY_REQUESTS`(요청 빈도 제한, 429), `INTERNAL`, `EXTERNAL`(외부 서비스 장애, 502). `HttpStatus` 사용 금지.
 - 상수 이름 `{DOMAIN}_{SITUATION}` (`BOARD_NOT_FOUND`, `ENROLL_ALREADY_ACCEPTED`). `BAD_REQUEST` 같은 모호한 이름 금지.
 - 에러마다 전용 예외 클래스: `domain/exception/{상수 PascalCase}Exception extends BusinessException`. `BusinessException` 은 추상 클래스라 직접 던질 수 없다.
 - BC 무관 공통 코드는 `global.error.GlobalErrorCode` (`INVALID_INPUT`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `METHOD_NOT_ALLOWED`, `INTERNAL_SERVER_ERROR`).

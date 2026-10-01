@@ -7,6 +7,8 @@ public enum ErrorType {
     FORBIDDEN,
     NOT_FOUND,
     CONFLICT,
+    // 같은 요청을 너무 자주 보냄 (예: 인증 메일 재발송 간격)
+    TOO_MANY_REQUESTS,
     INTERNAL,
     EXTERNAL;
 
