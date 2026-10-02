@@ -1,7 +1,7 @@
 # facepick 백엔드
 
 여러 명이 함께 찍은 사진을 AI 가 인물별로 분류해, 각자 자기 사진만 받아 가는 서비스의 메인 API 서버.
-Spring Boot 4.1 · Java 21 · JPA · PostgreSQL(pgvector) · Flyway · Kafka · S3 호환 스토리지(SeaweedFS → R2).
+Spring Boot 3.5 · Java 17 · JPA · PostgreSQL(pgvector) · Flyway · Kafka · S3 호환 스토리지(SeaweedFS → R2).
 코드 컨벤션은 catchmate 백엔드와 같다.
 
 ## 명령어

@@ -7,7 +7,7 @@
 ```
 facepick/
 ├── infra/              # 내 컴퓨터: PostgreSQL(pgvector) · S3 스토리지(SeaweedFS) · Kafka
-├── backend/            # 내 컴퓨터: Spring Boot 4 (Java 21) API 서버. 컨벤션은 backend/CLAUDE.md
+├── backend/            # 내 컴퓨터: Spring Boot 3.5 (Java 17) API 서버. 컨벤션은 backend/CLAUDE.md
 │   └── src/main/java/com/back/facepick/
 │       ├── album/      # BC: 앨범 생성·조회
 │       ├── photo/      # BC: 업로드 URL 발급, 업로드 완료 → photo.uploaded 발행, 사진 조회·다운로드

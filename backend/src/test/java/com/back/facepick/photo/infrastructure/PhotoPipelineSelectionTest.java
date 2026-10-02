@@ -7,10 +7,10 @@ import com.back.facepick.photo.application.PhotoOutboxRelay;
 import com.back.facepick.photo.domain.PhotoEventPublisher;
 import com.back.facepick.photo.domain.PhotoOutboxRepository;
 import com.back.facepick.photo.domain.PhotoPipeline;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-import tools.jackson.databind.json.JsonMapper;
 
 class PhotoPipelineSelectionTest {
 
@@ -18,7 +18,7 @@ class PhotoPipelineSelectionTest {
             .withUserConfiguration(EventPhotoPipeline.class, SyncPhotoPipelineConfig.class, PhotoOutboxRelay.class)
             .withBean(PhotoOutboxRepository.class, () -> mock(PhotoOutboxRepository.class))
             .withBean(PhotoEventPublisher.class, () -> mock(PhotoEventPublisher.class))
-            .withBean(JsonMapper.class, () -> JsonMapper.builder().build())
+            .withBean(ObjectMapper.class, () -> new ObjectMapper())
             .withPropertyValues(
                     "facepick.pipeline.thumbnail-url=http://thumbnail",
                     "facepick.pipeline.face-url=http://face",

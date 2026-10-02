@@ -88,9 +88,9 @@ class PhotoQueryServiceTest {
             assertThat(result.content()).extracting(PhotoSummaryResult::photoId).containsExactly(3L, 2L);
             assertThat(result.hasNext()).isTrue();
             assertThat(PhotoCursorCodec.decode(result.nextCursor())).isEqualTo(PhotoCursor.from(second));
-            assertThat(result.content().getFirst().thumbnailUrl())
+            assertThat(result.content().get(0).thumbnailUrl())
                     .isEqualTo("http://storage/albums/10/thumbnails/" + hash(3) + ".jpg");
-            assertThat(result.content().getFirst().urlExpiresAt()).isNotNull();
+            assertThat(result.content().get(0).urlExpiresAt()).isNotNull();
         }
 
         @Test
@@ -160,7 +160,7 @@ class PhotoQueryServiceTest {
             CursorPageResult<PhotoSummaryResult> result = photoQueryService.getPhotos(USER_ID, ALBUM_ID, null, 20);
 
             // then
-            PhotoSummaryResult summary = result.content().getFirst();
+            PhotoSummaryResult summary = result.content().get(0);
             assertThat(summary.thumbnailUrl()).isNull();
             assertThat(summary.width()).isNull();
             then(photoStorage).should(never()).createDownloadUrl(anyString());
@@ -282,8 +282,7 @@ class PhotoQueryServiceTest {
             assertThat(result.photos())
                     .extracting(PhotoDownloadResult.Item::photoId, PhotoDownloadResult.Item::fileName)
                     .containsExactly(tuple(12L, "facepick-12.jpg"), tuple(15L, "facepick-15.jpg"));
-            assertThat(result.photos().getFirst().originalUrl())
-                    .isEqualTo("http://storage/original?name=facepick-12.jpg");
+            assertThat(result.photos().get(0).originalUrl()).isEqualTo("http://storage/original?name=facepick-12.jpg");
             assertThat(result.urlExpiresAt()).isNotNull();
         }
 

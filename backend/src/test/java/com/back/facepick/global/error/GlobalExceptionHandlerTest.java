@@ -5,6 +5,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.nio.charset.StandardCharsets;
@@ -28,8 +30,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
-import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 
 @ExtendWith(OutputCaptureExtension.class)
 class GlobalExceptionHandlerTest {
@@ -141,8 +141,8 @@ class GlobalExceptionHandlerTest {
         JsonNode body = objectMapper.readTree(response.getContentAsString(StandardCharsets.UTF_8));
 
         assertThat(response.getStatus()).isEqualTo(status);
-        assertThat(body.get("code").asString()).isEqualTo(code);
-        assertThat(body.get("message").asString()).isEqualTo(message);
+        assertThat(body.get("code").asText()).isEqualTo(code);
+        assertThat(body.get("message").asText()).isEqualTo(message);
         assertThat(body.size()).isEqualTo(2);
     }
 
@@ -204,7 +204,7 @@ class GlobalExceptionHandlerTest {
 
         @GetMapping("/test/no-resource")
         void noResource() throws NoResourceFoundException {
-            throw new NoResourceFoundException(HttpMethod.GET, "/missing", "missing");
+            throw new NoResourceFoundException(HttpMethod.GET, "/missing");
         }
 
         @GetMapping("/test/too-large")

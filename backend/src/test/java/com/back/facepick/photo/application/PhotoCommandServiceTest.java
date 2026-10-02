@@ -583,7 +583,7 @@ class PhotoCommandServiceTest {
             then(photoStorageDeletionRepository)
                     .should()
                     .saveAll(argThat((List<PhotoStorageDeletion> deletions) -> deletions.size() == 1
-                            && deletions.getFirst().getStorageKey().equals(old.getStorageKey())));
+                            && deletions.get(0).getStorageKey().equals(old.getStorageKey())));
             then(eventPublisher).should().publishEvent(new PhotosDeletedEvent(ALBUM_ID, List.of(50L)));
         }
 

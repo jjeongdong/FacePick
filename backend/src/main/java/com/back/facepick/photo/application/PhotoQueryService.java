@@ -140,7 +140,7 @@ public class PhotoQueryService {
                                 : null,
                         urlExpiresAt))
                 .toList();
-        String nextCursor = hasNext ? PhotoCursorCodec.encode(PhotoCursor.from(page.getLast())) : null;
+        String nextCursor = hasNext ? PhotoCursorCodec.encode(PhotoCursor.from(page.get(page.size() - 1))) : null;
         return new CursorPageResult<>(content, nextCursor, hasNext);
     }
 
